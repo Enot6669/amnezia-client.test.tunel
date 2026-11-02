@@ -38,22 +38,21 @@ jobs:
           # GitHub-hosted Windows Server images do not guarantee WinGet.
           # Download the official Microsoft WDK installer directly.
           $installer = Join-Path $env:RUNNER_TEMP 'wdksetup.exe'
-          $downloadUrls = @(
-            'https://go.microsoft.com/fwlink/?linkid=2335869'
-          )
-          $downloaded = $false
-          foreach ($url in $downloadUrls) {
-            try {
-              Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRedirection 10
-              if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 50MB) {
-                $downloaded = $true
-                break
-              }
-            } catch {
-              Write-Warning "WDK download attempt failed: $($_.Exception.Message)"
-            }
+          # This is the final Microsoft download.microsoft.com target returned by
+          # the official WDK 10.0.26100.6584 download link. Download it directly
+          # to avoid redirect handling differences in hosted PowerShell runners.
+          $url = 'https://download.microsoft.com/download/41fb59c2-1723-45f9-a270-96b73ad58233/KIT_BUNDLE_WDK_MEDIACREATION/wdksetup.exe'
+          if (Test-Path $installer) { Remove-Item $installer -Force }
+          & curl.exe --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --output $installer $url
+          if ($LASTEXITCODE -ne 0) {
+            throw "Official Microsoft WDK download failed with curl exit code $LASTEXITCODE."
           }
-          if (!$downloaded) { throw 'Could not download the official Windows Driver Kit installer.' }
+          if (!(Test-Path $installer)) { throw 'WDK installer was not created.' }
+          $downloadLength = (Get-Item $installer).Length
+          Write-Host "Downloaded WDK installer: $downloadLength bytes"
+          if ($downloadLength -lt 50MB) {
+            throw "Downloaded WDK installer is unexpectedly small ($downloadLength bytes)."
+          }
           $signature = Get-AuthenticodeSignature $installer
           if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
             throw "WDK installer signature validation failed: $($signature.Status)"
