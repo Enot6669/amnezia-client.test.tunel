@@ -86,9 +86,18 @@ edit("src/procmgmt/procmgmt.cpp", [
         {
             RegistryEntry->Settings.Split = ST_PROCESS_SPLIT_STATUS_ON_BY_CONFIG;
             ArrivalEvent->SplittingReason |= ST_SPLITTING_REASON_BY_CONFIG;
-            goto Duplicate_imagename;
-        }
+            ArrivalEvent->EmitEvent = true;
 
+            // Do not jump over the legacy branch's local variable
+            // initializations: that is ill-formed C++.
+            auto duplicateStatus = util::DuplicateString(
+                &ArrivalEvent->Imagename, &RegistryEntry->ImageName,
+                ST_PAGEABLE::NO);
+            if (!NT_SUCCESS(duplicateStatus))
+            {
+                ArrivalEvent->EmitEvent = false;
+            }
+        }
         return;
     }
 
