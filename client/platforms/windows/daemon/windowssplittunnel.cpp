@@ -262,15 +262,22 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
     driverFile = CreateFileW(DRIVER_SYMLINK, GENERIC_READ | GENERIC_WRITE, 0,
                              nullptr, OPEN_EXISTING, 0, nullptr);
     if (driverFile == INVALID_HANDLE_VALUE) {
-      logger.error() << "Opening Failed again, sorry!";
+      logger.error() << "Opening Failed again";
+      if (!driver_manager->stopService()) {
+        logger.error() << "Failed to stop driver after device open failure";
+      }
       return nullptr;
     }
   }
   if (!initDriver(driverFile)) {
     logger.error() << "Failed to init driver";
+    CloseHandle(driverFile);
+    if (!driver_manager->stopService()) {
+      logger.error() << "Failed to stop driver after initialization failure";
+    }
     return nullptr;
   }
-  // We're ready to talk to the driver, it's alive and setup.
+  // Ownership of the device handle transfers to WindowsSplitTunnel.
   return std::make_unique<WindowsSplitTunnel>(driverFile);
 }
 
