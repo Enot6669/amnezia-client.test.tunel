@@ -47,11 +47,19 @@ class WinSplitTunnel(ConanFile):
 
         # SHA-256 values were calculated from the exact files at the pinned
         # binaries commit. Keep the catalog and INF alongside the signed SYS.
-        files = [
-            ("mullvad-split-tunnel.cat", "c599926a0327d7ae06b534f4cd039db30392e1897bb9d03e4fec3631744a4e6d"),
-            ("mullvad-split-tunnel.inf", "3dd5905e5fb98d61a942a33e8c9a5ba07c3a2de1e4f319e1fec3e54df6591608"),
-            ("mullvad-split-tunnel.sys", "10cf25bbcfe51fd663a1fec88a98e9b858f3a579589bb2ec496b66e4fdd1b201"),
-        ]
+        checksums = {
+            "x86_64": {
+                "mullvad-split-tunnel.cat": "c599926a0327d7ae06b534f4cd039db30392e1897bb9d03e4fec3631744a4e6d",
+                "mullvad-split-tunnel.inf": "3dd5905e5fb98d61a942a33e8c9a5ba07c3a2de1e4f319e1fec3e54df6591608",
+                "mullvad-split-tunnel.sys": "10cf25bbcfe51fd663a1fec88a98e9b858f3a579589bb2ec496b66e4fdd1b201",
+            },
+            "aarch64": {
+                "mullvad-split-tunnel.cat": "c3d27636739ebaa7dde369d113347de83e3e2173b8a512bb8863d11b148de7ce",
+                "mullvad-split-tunnel.inf": "0bfdb044e40535dabbeb3620b655c1563714b3a6f3231d3492c972c6e8dea6f1",
+                "mullvad-split-tunnel.sys": "6af8b3bfe5aa095d5276187558c7c7d3a3e0c174b34406cd6c4b3f8e6ffa6534",
+            },
+        }
+        files = checksums[self._arch].items()
 
         for name, sha256 in files:
             download(
