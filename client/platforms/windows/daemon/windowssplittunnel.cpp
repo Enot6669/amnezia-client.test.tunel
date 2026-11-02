@@ -490,16 +490,19 @@ std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
     const QString normalizedPath = normalizeExecutablePath(path);
     auto dosPath = convertPath(normalizedPath);
     if (dosPath.isEmpty()) {
-      logger.error() << "Rejecting split-tunnel app path with empty device "
-                        "conversion:"
+      logger.error() << "Rejecting split-tunnel configuration because an "
+                        "application path could not be converted to a device path:"
                      << normalizedPath;
-      continue;
+      return {};
     }
     dosPaths.append(dosPath);
     cummulated_string_size += dosPath.toStdWString().size() * sizeof(wchar_t);
   }
   if (dosPaths.isEmpty()) {
-    if (!allowEmpty) {
+    // Only a genuinely empty user selection is valid in reverse mode.
+    // A non-empty list whose paths all failed conversion must not silently
+    // become an allow-list for zero applications.
+    if (!allowEmpty || !appPaths.isEmpty()) {
       return {};
     }
     std::vector<uint8_t> emptyConfiguration(sizeof(CONFIGURATION_HEADER));
