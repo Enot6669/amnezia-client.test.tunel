@@ -5,10 +5,14 @@ from conan.errors import ConanInvalidConfiguration
 
 import os
 
+
 class WinSplitTunnel(ConanFile):
     name = "win-split-tunnel"
-    version = "1.2.5.0"
+    version = "1.3.0.0"
     settings = "os", "arch"
+
+    # Pin the signed upstream artifacts independently of the driver source tag.
+    _BINARIES_COMMIT = "5b6f46cde692acb77ee74b37b9fd3f1678c45a52"
 
     @property
     def _arch(self):
@@ -29,19 +33,33 @@ class WinSplitTunnel(ConanFile):
             raise ConanInvalidConfiguration(
                 f"{self.name} v{self.version} supports only Windows"
             )
+        if self._arch is None:
+            raise ConanInvalidConfiguration(
+                f"{self.name} v{self.version} does not support {self.settings.arch}"
+            )
 
     def build(self):
-        url = f"https://raw.githubusercontent.com/mullvad/mullvadvpn-app-binaries/ff0e3746c89a04314377cffeb52faaa976413a69/{self._target}/split-tunnel"
+        url = (
+            "https://raw.githubusercontent.com/mullvad/"
+            f"mullvadvpn-app-binaries/{self._BINARIES_COMMIT}/"
+            f"{self._target}/split-tunnel"
+        )
 
+        # SHA-256 values were calculated from the exact files at the pinned
+        # binaries commit. Keep the catalog and INF alongside the signed SYS.
         files = [
-            ("mullvad-split-tunnel.cat", "9bbd10b95a2cf2226b266a52077300c280f7782def69ebbeb892bb60505d9a5f"),
-            ("mullvad-split-tunnel.inf", "4ec3c2bdefc2a1df9e4e19cd4301b5774624ea07e61add588067b16f8925f5d7"),
-            ("mullvad-split-tunnel.pdb", "ee0e246b18a3bfecfc27104b40f9492ffd2b735582870fbd572f93d55e8e9eaa"),
-            ("mullvad-split-tunnel.sys", "4056b22d08115c1a83bc2cafa17de0bb17db3705eac382de77fd7935eeff7edb"),
+            ("mullvad-split-tunnel.cat", "c599926a0327d7ae06b534f4cd039db30392e1897bb9d03e4fec3631744a4e6d"),
+            ("mullvad-split-tunnel.inf", "3dd5905e5fb98d61a942a33e8c9a5ba07c3a2de1e4f319e1fec3e54df6591608"),
+            ("mullvad-split-tunnel.sys", "10cf25bbcfe51fd663a1fec88a98e9b858f3a579589bb2ec496b66e4fdd1b201"),
         ]
 
         for name, sha256 in files:
-            download(self, f"{url}/{name}", os.path.join("prebuilt", name), sha256=sha256)
+            download(
+                self,
+                f"{url}/{name}",
+                os.path.join("prebuilt", name),
+                sha256=sha256
+            )
 
     def package(self):
         copy(self, "*", src="prebuilt", dst=os.path.join(self.package_folder, "bin"))
