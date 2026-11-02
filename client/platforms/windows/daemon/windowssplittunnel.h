@@ -83,7 +83,8 @@ class WindowsSplitTunnel final {
   QString stateString();
 
   // Generates a Configuration for Each APP
-  std::vector<uint8_t> generateAppConfiguration(const QStringList& appPaths,\n                                                bool selectedAppsViaVpn);
+  std::vector<uint8_t> generateAppConfiguration(const QStringList& appPaths,
+                                                bool selectedAppsViaVpn);
   // Generates a Configuration which IP's are VPN and which network
   std::vector<std::byte> generateIPConfiguration(int inetAdapterIndex, int vpnAdapterIndex = 0);
   std::vector<uint8_t> generateProcessBlob();
