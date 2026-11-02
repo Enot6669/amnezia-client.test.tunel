@@ -88,7 +88,7 @@ void WindowsDaemon::activateSplitTunnel(const InterfaceConfig& config, int vpnAd
           emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
           return;
       }
-      if (!m_splitTunnelManager->excludeApps(config.m_vpnDisabledApps)) {
+      if (!m_splitTunnelManager->excludeApps(config.m_vpnDisabledApps, config.m_appsRouteMode == 1)) {
           logger.error() << "Failed to apply split tunnel app exclusions";
           emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_EXCLUDE_FAILURE);
           return;
