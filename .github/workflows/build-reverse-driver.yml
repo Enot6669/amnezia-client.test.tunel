@@ -45,6 +45,20 @@ jobs:
         run: |
           python recipes/win-split-tunnel/patches/apply_reverse_mode_patch.py "$env:DRIVER_SOURCE"
 
+      - name: Prepare WDK INF verifier
+        shell: pwsh
+        run: |
+          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
+          $target = Join-Path $kits 'build\10.0.26100.0\x86'
+          $verifier = Get-ChildItem -Path $kits -Filter 'InfVerif.dll' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($verifier) {
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item $verifier.FullName (Join-Path $target 'InfVerif.dll') -Force
+            Write-Host "Prepared InfVerif.dll from $($verifier.FullName)"
+          } else {
+            Write-Host 'InfVerif.dll was not found in the installed WDK; MSBuild output will be reviewed for INF validation diagnostics.'
+          }
+
       - name: Build unsigned x64 driver
         shell: pwsh
         run: |
