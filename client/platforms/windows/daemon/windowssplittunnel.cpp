@@ -229,13 +229,19 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
         << "WindowsServiceManager was unable fo find Split Tunnel service?";
     return nullptr;
   }
-  if (!driver_manager->isRunning()) {
-    logger.debug() << "Driver is not running, starting it";
-    // Start the service
-    if (!driver_manager->startService()) {
-      logger.error() << "Failed to start Split Tunnel Service";
+  // Reload an already-running service so Windows picks up the current
+  // driver image shipped with this application version.
+  if (driver_manager->isRunning()) {
+    logger.debug() << "Restarting Split Tunnel Service to load the current driver image";
+    if (!driver_manager->stopService()) {
+      logger.error() << "Failed to stop the existing Split Tunnel Service";
       return nullptr;
-    };
+    }
+  }
+
+  if (!driver_manager->startService()) {
+    logger.error() << "Failed to start Split Tunnel Service";
+    return nullptr;
   }
   // 03: Open the Driver Symlink
   auto driverFile = CreateFileW(DRIVER_SYMLINK, GENERIC_READ | GENERIC_WRITE, 0,
