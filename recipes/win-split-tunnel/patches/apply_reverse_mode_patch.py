@@ -203,7 +203,7 @@ edit("src/ioctl.cpp", [
 
     if (NT_SUCCESS(status))
     {
-        DbgPrint("Successfully processed IOCTL_ST_SET_CONFIGURATION\\\\n");
+        DbgPrint("Successfully processed IOCTL_ST_SET_CONFIGURATION\\n");
 """,
 """    if (!NT_SUCCESS(status))
     {
@@ -215,7 +215,7 @@ edit("src/ioctl.cpp", [
 
     if (NT_SUCCESS(status))
     {
-        DbgPrint("Successfully processed configuration update (reverse=%u)\\\\n", ReverseMode ? 1 : 0);
+        DbgPrint("Successfully processed configuration update (reverse=%u)\\n", ReverseMode ? 1 : 0);
 """),
 (
 """    registeredimage::Reset(context->RegisteredImage.Instance);
