@@ -47,7 +47,6 @@ class WindowsSplitTunnel final {
   // void excludeApps(const QStringList& paths);
   // Excludes an Application from the VPN
   bool excludeApps(const QStringList& appPaths, bool selectedAppsViaVpn = false);
-  bool supportsReverseMode() const;
 
   // Fetches and Pushed needed info to move to engaged mode
   bool start(int inetAdapterIndex, int vpnAdapterIndex = 0);
