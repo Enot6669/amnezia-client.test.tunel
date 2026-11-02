@@ -342,16 +342,7 @@ edit("src/ioctl.cpp", [
     {
         Context->IpAddresses = *newIpAddresses;
 """),
-(
-"""    registeredimage::Reset(context->RegisteredImage.Instance);
 
-    WdfWaitLockRelease(context->DriverState.Lock);
-""",
-"""    registeredimage::Reset(context->RegisteredImage.Instance);
-    context->ReverseMode = false;
-
-    WdfWaitLockRelease(context->DriverState.Lock);
-""")
 ])
 
 edit("src/driverentry.cpp", [(
