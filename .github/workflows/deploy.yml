@@ -165,6 +165,8 @@ jobs:
         python-version: 3.14
 
     - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        vsversion: '2022'
 
     - name: 'Install WDK for the reverse-mode driver'
       if: github.ref == 'refs/heads/reverse-split-tunneling-windows'
@@ -230,6 +232,7 @@ jobs:
     - name: 'Setup mvsc'
       uses: ilammy/msvc-dev-cmd@v1
       with:
+        vsversion: '2022'
         arch: 'x64'
 
     - name: 'Install WDK for the reverse-mode driver'
@@ -1355,6 +1358,7 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
+          vsversion: '2022'
           arch: x64
 
       - name: Download Xray core
