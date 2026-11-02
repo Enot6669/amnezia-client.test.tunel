@@ -733,41 +733,6 @@ SC_HANDLE WindowsSplitTunnel::installDriver() {
   CloseServiceHandle(serviceManager);
   return service;
 }
-// static
-bool WindowsSplitTunnel::uninstallDriver() {
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(NULL,  // local computer
-                                      NULL,  // servicesActive database
-                                      scm_rights);
-
-  auto servicehandle =
-      OpenService(serviceManager, DRIVER_SERVICE_NAME, GENERIC_READ);
-  auto result = DeleteService(servicehandle);
-  if (result) {
-    logger.debug() << "Split Tunnel Driver Removed";
-  }
-  return result;
-}
-// static
-bool WindowsSplitTunnel::isInstalled() {
-  // Check if the Drivers I/O File is present
-  auto symlink = QFileInfo(QString::fromWCharArray(DRIVER_SYMLINK));
-  if (symlink.exists()) {
-    return true;
-  }
-  // If not check with SCM, if the kernel service exists
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(NULL,  // local computer
-                                      NULL,  // servicesActive database
-                                      scm_rights);
-  auto servicehandle =
-      OpenService(serviceManager, DRIVER_SERVICE_NAME, GENERIC_READ);
-  auto err = GetLastError();
-  CloseServiceHandle(serviceManager);
-  CloseServiceHandle(servicehandle);
-  return err != ERROR_SERVICE_DOES_NOT_EXIST;
-}
-
 QString WindowsSplitTunnel::convertPath(const QString& path) {
   const QString normalizedPath = normalizeExecutablePath(path);
   if (normalizedPath.isEmpty()) {
