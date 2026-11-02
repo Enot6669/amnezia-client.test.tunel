@@ -367,5 +367,16 @@ edit("src/driverentry.cpp", [(
 """auto status = ioctl::SetConfigurationPrepare(Request, &imageset, reverseMode);"""
 )])
 
+edit("src/ioctl.cpp", [(
+"""    Context->DriverState.State = ST_DRIVER_STATE_STARTED;
+
+    WdfWaitLockRelease(Context->DriverState.Lock);
+""",
+"""    Context->DriverState.State = ST_DRIVER_STATE_STARTED;
+    Context->ReverseMode = false;
+
+    WdfWaitLockRelease(Context->DriverState.Lock);
+""")])
+
 
 print("Reverse-mode driver patch applied successfully.")
