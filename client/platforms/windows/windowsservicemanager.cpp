@@ -33,23 +33,21 @@ std::unique_ptr<WindowsServiceManager> WindowsServiceManager::open(
   auto manager = OpenSCManager(NULL,  // local computer
                                NULL,  // servicesActive database
                                scm_rights);
-  err = GetLastError();
-  if (err != NULL) {
-    logger.error() << " OpenSCManager failed code: " << err;
+  if (manager == nullptr) {
+    err = GetLastError();
+    logger.error() << "OpenSCManager failed code: " << err;
     return {};
   }
-  logger.debug() << "OpenSCManager access given - " << err;
+  logger.debug() << "OpenSCManager access given";
 
   logger.debug() << "Opening Service - " << serviceName;
-  // Try to get an elevated handle
-  auto serviceHandle =
-      OpenService(manager,  // SCM database
-                  service,  // name of service
-                  (GENERIC_READ | SERVICE_START | SERVICE_STOP));
-  err = GetLastError();
-  if (err != NULL) {
+  auto serviceHandle = OpenService(
+      manager, service,
+      SERVICE_QUERY_STATUS | SERVICE_START | SERVICE_STOP);
+  if (serviceHandle == nullptr) {
+    err = GetLastError();
     CloseServiceHandle(manager);
-    WindowsUtils::windowsLog("OpenService failed");
+    logger.error() << "OpenService failed code: " << err;
     return {};
   }
 
@@ -94,48 +92,67 @@ bool WindowsServiceManager::startPolling(DWORD goal_state, int max_wait_sec) {
 }
 
 SERVICE_STATUS_PROCESS WindowsServiceManager::getStatus() {
-  SERVICE_STATUS_PROCESS serviceStatus;
-  DWORD dwBytesNeeded;  // Contains missing bytes if struct is too small?
-  QueryServiceStatusEx(m_service,                       // handle to service
-                       SC_STATUS_PROCESS_INFO,          // information level
-                       (LPBYTE)&serviceStatus,          // address of structure
-                       sizeof(SERVICE_STATUS_PROCESS),  // size of structure
-                       &dwBytesNeeded);
+  SERVICE_STATUS_PROCESS serviceStatus{};
+  DWORD bytesNeeded = 0;
+  if (!QueryServiceStatusEx(m_service, SC_STATUS_PROCESS_INFO,
+                            reinterpret_cast<LPBYTE>(&serviceStatus),
+                            sizeof(serviceStatus), &bytesNeeded)) {
+    WindowsUtils::windowsLog("QueryServiceStatusEx failed");
+    // Treat an unknown state as pending so callers fail closed.
+    serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
+  }
   return serviceStatus;
 }
 
 bool WindowsServiceManager::startService() {
   auto state = getStatus().dwCurrentState;
-  if (state != SERVICE_STOPPED && state != SERVICE_STOP_PENDING) {
-    logger.warning() << ("Service start not possible, as its running");
+  if (state == SERVICE_RUNNING) {
     emit serviceStarted();
     return true;
   }
-
-  bool ok = StartService(m_service,  // handle to service
-                         0,          // number of arguments
-                         NULL);      // no arguments
-  if (ok) {
-    logger.debug() << ("Service start requested");
-    startPolling(SERVICE_RUNNING, 30);
-  } else {
-    WindowsUtils::windowsLog("StartService failed");
+  if (state == SERVICE_START_PENDING) {
+    return startPolling(SERVICE_RUNNING, 30);
   }
-  return ok;
+  if (state == SERVICE_STOP_PENDING &&
+      !startPolling(SERVICE_STOPPED, 30)) {
+    logger.error() << "Service did not reach STOPPED before start";
+    return false;
+  }
+
+  if (!StartService(m_service, 0, NULL)) {
+    const DWORD error = GetLastError();
+    if (error != ERROR_SERVICE_ALREADY_RUNNING) {
+      logger.error() << "StartService failed:" << error;
+      return false;
+    }
+  }
+  logger.debug() << "Service start requested";
+  return startPolling(SERVICE_RUNNING, 30);
 }
 
 bool WindowsServiceManager::stopService() {
   auto state = getStatus().dwCurrentState;
-  if (state != SERVICE_RUNNING && state != SERVICE_START_PENDING) {
-    logger.warning() << ("Service stop not possible, as its not running");
+  if (state == SERVICE_STOPPED) {
+    emit serviceStopped();
+    return true;
+  }
+  if (state == SERVICE_STOP_PENDING) {
+    return startPolling(SERVICE_STOPPED, 30);
+  }
+  if (state == SERVICE_START_PENDING &&
+      !startPolling(SERVICE_RUNNING, 30)) {
+    logger.error() << "Service did not reach RUNNING before stop";
+    return false;
   }
 
-  bool ok = ControlService(m_service, SERVICE_CONTROL_STOP, NULL);
-  if (ok) {
-    logger.debug() << ("Service stop requested");
-    startPolling(SERVICE_STOPPED, 10);
-  } else {
-    WindowsUtils::windowsLog("StopService failed");
+  SERVICE_STATUS status{};
+  if (!ControlService(m_service, SERVICE_CONTROL_STOP, &status)) {
+    const DWORD error = GetLastError();
+    if (error != ERROR_SERVICE_NOT_ACTIVE) {
+      logger.error() << "ControlService stop failed:" << error;
+      return false;
+    }
   }
-  return ok;
+  logger.debug() << "Service stop requested";
+  return startPolling(SERVICE_STOPPED, 30);
 }
