@@ -74,15 +74,17 @@ void WindowsDaemon::prepareActivation(const InterfaceConfig& config, int inetAda
 }
 
 void WindowsDaemon::activateSplitTunnel(const InterfaceConfig& config, int vpnAdapterIndex) {
+    const bool splitTunnelEnabled =
+        config.m_appsRouteMode == 1 || !config.m_vpnDisabledApps.isEmpty();
     if (m_splitTunnelManager == nullptr) {
-        if (config.m_vpnDisabledApps.length() > 0) {
+        if (splitTunnelEnabled) {
             logger.error() << "Split tunnel manager is not initialized";
             emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_INIT_FAILURE);
         }
         return;
     }
 
-  if (config.m_vpnDisabledApps.length() > 0) {
+  if (splitTunnelEnabled) {
       if (!m_splitTunnelManager->start(m_inetAdapterIndex, vpnAdapterIndex)) {
           logger.error() << "Failed to start split tunnel";
           emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
@@ -103,8 +105,10 @@ void WindowsDaemon::activateSplitTunnel(const InterfaceConfig& config, int vpnAd
 }
 
 bool WindowsDaemon::run(Op op, const InterfaceConfig& config) {
+  const bool splitTunnelEnabled =
+      config.m_appsRouteMode == 1 || !config.m_vpnDisabledApps.isEmpty();
   if (!m_splitTunnelManager) {
-    if (config.m_vpnDisabledApps.length() > 0) {
+    if (splitTunnelEnabled) {
       // The Client has sent us a list of disabled apps, but we failed
       // to init the the split tunnel driver.
       // So let the client know this was not possible
@@ -119,7 +123,7 @@ bool WindowsDaemon::run(Op op, const InterfaceConfig& config) {
     m_splitTunnelManager->stop();
     return true;
   }
-  if (config.m_vpnDisabledApps.length() > 0) {
+  if (splitTunnelEnabled) {
     if (!m_splitTunnelManager->start(m_inetAdapterIndex)) {
       logger.error() << "Split tunnel start failed";
       emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
