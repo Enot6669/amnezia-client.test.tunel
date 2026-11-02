@@ -308,7 +308,7 @@ WindowsSplitTunnel::~WindowsSplitTunnel() {
   uninstallDriver();
 }
 
-bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
+bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths,\n                                     bool selectedAppsViaVpn) {
   auto state = getState();
   if (state != STATE_READY && state != STATE_RUNNING) {
     logger.warning() << "Driver is not in the right State to set Rules"
@@ -317,7 +317,7 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
   }
 
   logger.debug() << "Pushing new Ruleset for Split-Tunnel " << state;
-  auto config = generateAppConfiguration(appPaths);
+  auto config = generateAppConfiguration(appPaths, selectedAppsViaVpn);
   if (config.empty()) {
     logger.error() << "No valid split-tunnel application rules generated";
     return false;
@@ -442,7 +442,7 @@ WindowsSplitTunnel::DRIVER_STATE WindowsSplitTunnel::getState() {
 }
 
 std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
-    const QStringList& appPaths) {
+    const QStringList& appPaths, bool selectedAppsViaVpn) {
   // Step 1: Calculate how much size the buffer will need
   size_t cummulated_string_size = 0;
   QStringList dosPaths;
