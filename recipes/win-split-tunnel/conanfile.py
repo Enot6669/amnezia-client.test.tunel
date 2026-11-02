@@ -62,7 +62,7 @@ class WinSplitTunnel(ConanFile):
                 "Pinned Mullvad driver source archive does not contain the expected MSBuild project"
             )
 
-        patcher = Path(self.recipe_folder) / "apply_reverse_mode_patch.py"
+        patcher = Path(self.export_sources_folder) / "apply_reverse_mode_patch.py"
         if not patcher.is_file():
             raise ConanInvalidConfiguration(f"Reverse-mode patcher is missing: {patcher}")
         subprocess.run(
