@@ -261,12 +261,24 @@ edit("src/driverentry.cpp", [(
 
 
 edit("src/validation.cpp", [(
-"""    if (STATUS_SUCCESS != status || stringBuffer >= bufferEnd)
+"""    const auto status = RtlULongPtrAdd(
+        (ULONG_PTR)((UCHAR*)Buffer + sizeof(ST_CONFIGURATION_HEADER)),
+        entriesSize,
+        (ULONG_PTR*)&stringBuffer
+    );
+
+    if (STATUS_SUCCESS != status || stringBuffer >= bufferEnd)
     {
         return false;
     }
 """,
-"""    if (STATUS_SUCCESS != status || stringBuffer > bufferEnd)
+"""    const auto status = RtlULongPtrAdd(
+        (ULONG_PTR)((UCHAR*)Buffer + sizeof(ST_CONFIGURATION_HEADER)),
+        entriesSize,
+        (ULONG_PTR*)&stringBuffer
+    );
+
+    if (STATUS_SUCCESS != status || stringBuffer > bufferEnd)
     {
         return false;
     }
