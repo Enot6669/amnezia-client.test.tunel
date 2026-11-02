@@ -48,12 +48,7 @@ using CONFIGURATION_HEADER = struct {
 
   // Total byte length: header + entries + string buffer.
   SIZE_T TotalLength;
-
-  // Bit 0: selected applications use VPN (reverse split tunnel).
-  ULONG Flags;
 };
-
-constexpr ULONG CONFIGURATION_FLAG_SELECTED_APPS_USE_VPN = 0x00000001;
 
 // Used to Configure Which IP is network/vpn
 using IP_ADDRESSES_CONFIG = struct {
@@ -313,8 +308,7 @@ WindowsSplitTunnel::~WindowsSplitTunnel() {
   uninstallDriver();
 }
 
-bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths,
-                                     bool selectedAppsViaVpn) {
+bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
   auto state = getState();
   if (state != STATE_READY && state != STATE_RUNNING) {
     logger.warning() << "Driver is not in the right State to set Rules"
@@ -323,7 +317,7 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths,
   }
 
   logger.debug() << "Pushing new Ruleset for Split-Tunnel " << state;
-  auto config = generateAppConfiguration(appPaths, selectedAppsViaVpn);
+  auto config = generateAppConfiguration(appPaths);
   if (config.empty()) {
     logger.error() << "No valid split-tunnel application rules generated";
     return false;
@@ -448,7 +442,7 @@ WindowsSplitTunnel::DRIVER_STATE WindowsSplitTunnel::getState() {
 }
 
 std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
-    const QStringList& appPaths, bool selectedAppsViaVpn) {
+    const QStringList& appPaths) {
   // Step 1: Calculate how much size the buffer will need
   size_t cummulated_string_size = 0;
   QStringList dosPaths;
@@ -497,9 +491,6 @@ std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
 
   header->NumEntries = dosPaths.length();
   header->TotalLength = bufferSize;
-  header->Flags = selectedAppsViaVpn
-                      ? CONFIGURATION_FLAG_SELECTED_APPS_USE_VPN
-                      : 0;
 
   return outBuffer;
 }
