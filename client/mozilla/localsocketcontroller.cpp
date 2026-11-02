@@ -248,6 +248,12 @@ void LocalSocketController::activate(const QJsonObject &rawConfig) {
 
   json.insert("vpnDisabledApps", splitTunnelApps);
 
+#ifdef MZ_WINDOWS
+  // Keep the selected-app routing intent distinct from the app list itself.
+  // The Windows daemon can then reject reverse mode until its driver supports it.
+  json.insert("appSplitTunnelType", appSplitTunnelType);
+#endif
+
   json.insert("allowedDnsServers", allowedDns);
 
   json.insert(amnezia::configKey::killSwitchOption, rawConfig.value(amnezia::configKey::killSwitchOption));
