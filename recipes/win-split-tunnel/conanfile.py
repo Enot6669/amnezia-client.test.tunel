@@ -14,7 +14,7 @@ class WinSplitTunnel(ConanFile):
     name = "win-split-tunnel"
     version = "1.3.0.0"
     settings = "os", "arch"
-    exports_sources = "patches/**"
+    exports_sources = "apply_reverse_mode_patch.py"
 
     # Build the exact upstream source revision with Amnezia's reverse-mode patch.
     # Do not fetch Mullvad's prebuilt signed SYS: it does not implement reverse mode.
@@ -62,7 +62,7 @@ class WinSplitTunnel(ConanFile):
                 "Pinned Mullvad driver source archive does not contain the expected MSBuild project"
             )
 
-        patcher = Path(self.recipe_folder) / "patches" / "apply_reverse_mode_patch.py"
+        patcher = Path(self.recipe_folder) / "apply_reverse_mode_patch.py"
         if not patcher.is_file():
             raise ConanInvalidConfiguration(f"Reverse-mode patcher is missing: {patcher}")
         subprocess.run(
