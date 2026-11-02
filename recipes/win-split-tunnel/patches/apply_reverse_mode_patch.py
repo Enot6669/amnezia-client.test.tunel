@@ -329,14 +329,14 @@ edit("src/ioctl.cpp", [
 (
 """    if (header->NumEntries == 0)
     {
-        DbgPrint("Cannot assign empty configuration\\\\n");
+        DbgPrint("Cannot assign empty configuration\\n");
 
         return STATUS_INVALID_PARAMETER;
     }
 """,
 """    if (header->NumEntries == 0 && !ReverseMode)
     {
-        DbgPrint("Cannot assign empty legacy configuration\\\\n");
+        DbgPrint("Cannot assign empty legacy configuration\\n");
 
         return STATUS_INVALID_PARAMETER;
     }
