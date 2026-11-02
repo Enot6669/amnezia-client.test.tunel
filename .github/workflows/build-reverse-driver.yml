@@ -1,5 +1,9 @@
 name: Build reverse-mode Mullvad driver (Windows)
 
+concurrency:
+  group: reverse-driver-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
