@@ -597,27 +597,29 @@ std::vector<uint8_t> WindowsSplitTunnel::generateProcessBlob() {
   }
   auto cleanup = qScopeGuard([&] { CloseHandle(snapshot_handle); });
   // Load the First Entry, later iterate over all
-  PROCESSENTRY32W currentProcess;
+  PROCESSENTRY32W currentProcess{};
   currentProcess.dwSize = sizeof(PROCESSENTRY32W);
 
-  if (FALSE == (Process32First(snapshot_handle, &currentProcess))) {
-    WindowsUtils::windowsLog("Cant read first entry");
+  if (Process32FirstW(snapshot_handle, &currentProcess) == FALSE) {
+    WindowsUtils::windowsLog("Process32FirstW failed");
+    return {};
   }
 
   QMap<DWORD, ProcessInfo> processes;
 
   do {
-    auto process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                                      currentProcess.th32ProcessID);
+    HANDLE process_handle = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+        currentProcess.th32ProcessID);
 
-    if (process_handle == nullptr) {
-      continue;
+    // Some protected/system processes cannot be opened. Skip their image
+    // metadata, but always advance the snapshot iterator.
+    if (process_handle != nullptr) {
+      ProcessInfo info = getProcessInfo(process_handle, currentProcess);
+      processes.insert(info.ProcessId, info);
+      CloseHandle(process_handle);
     }
-    ProcessInfo info = getProcessInfo(process_handle, currentProcess);
-    processes.insert(info.ProcessId, info);
-    CloseHandle(process_handle);
-
-  } while (FALSE != (Process32NextW(snapshot_handle, &currentProcess)));
+  } while (Process32NextW(snapshot_handle, &currentProcess) != FALSE);
 
   auto process_list = processes.values();
   if (process_list.isEmpty()) {
