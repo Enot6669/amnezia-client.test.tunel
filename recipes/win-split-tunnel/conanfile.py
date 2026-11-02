@@ -4,6 +4,10 @@ from conan.tools.files import download, copy
 from conan.errors import ConanInvalidConfiguration
 
 import os
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
 
 
 class WinSplitTunnel(ConanFile):
@@ -11,19 +15,13 @@ class WinSplitTunnel(ConanFile):
     version = "1.3.0.0"
     settings = "os", "arch"
 
-    # Pin the signed upstream artifacts independently of the driver source tag.
-    _BINARIES_COMMIT = "5b6f46cde692acb77ee74b37b9fd3f1678c45a52"
+    # Build the exact upstream source revision with Amnezia's reverse-mode patch.
+    # Do not fetch Mullvad's prebuilt signed SYS: it does not implement reverse mode.
+    _SOURCE_COMMIT = "0a0eb97f67d1dbcb3d08bda66d3b24f465d95475"
 
     @property
     def _arch(self):
-        return {
-            "x86_64": "x86_64",
-            "armv8": "aarch64"
-        }.get(str(self.settings.arch))
-
-    @property
-    def _target(self):
-        return f"{self._arch}-pc-windows-msvc"
+        return str(self.settings.arch)
 
     def layout(self):
         basic_layout(self)
@@ -33,44 +31,113 @@ class WinSplitTunnel(ConanFile):
             raise ConanInvalidConfiguration(
                 f"{self.name} v{self.version} supports only Windows"
             )
-        if self._arch is None:
+        if self._arch != "x86_64":
             raise ConanInvalidConfiguration(
-                f"{self.name} v{self.version} does not support {self.settings.arch}"
+                "The Amnezia reverse-mode driver is currently built for Windows x64 only"
             )
 
     def build(self):
-        url = (
-            "https://raw.githubusercontent.com/mullvad/"
-            f"mullvadvpn-app-binaries/{self._BINARIES_COMMIT}/"
-            f"{self._target}/split-tunnel"
+        source_url = (
+            "https://github.com/mullvad/win-split-tunnel/archive/"
+            f"{self._SOURCE_COMMIT}.zip"
         )
+        os.makedirs(self.source_folder, exist_ok=True)
+        archive = os.path.join(self.source_folder, "win-split-tunnel-source.zip")
+        download(self, source_url, archive)
 
-        # SHA-256 values were calculated from the exact files at the pinned
-        # binaries commit. Keep the catalog and INF alongside the signed SYS.
-        checksums = {
-            "x86_64": {
-                "mullvad-split-tunnel.cat": "c599926a0327d7ae06b534f4cd039db30392e1897bb9d03e4fec3631744a4e6d",
-                "mullvad-split-tunnel.inf": "3dd5905e5fb98d61a942a33e8c9a5ba07c3a2de1e4f319e1fec3e54df6591608",
-                "mullvad-split-tunnel.sys": "10cf25bbcfe51fd663a1fec88a98e9b858f3a579589bb2ec496b66e4fdd1b201",
-            },
-            "aarch64": {
-                "mullvad-split-tunnel.cat": "c3d27636739ebaa7dde369d113347de83e3e2173b8a512bb8863d11b148de7ce",
-                "mullvad-split-tunnel.inf": "0bfdb044e40535dabbeb3620b655c1563714b3a6f3231d3492c972c6e8dea6f1",
-                "mullvad-split-tunnel.sys": "6af8b3bfe5aa095d5276187558c7c7d3a3e0c174b34406cd6c4b3f8e6ffa6534",
-            },
-        }
-        files = checksums[self._arch].items()
+        with zipfile.ZipFile(archive, "r") as source_zip:
+            source_zip.extractall(self.source_folder)
 
-        for name, sha256 in files:
-            download(
-                self,
-                f"{url}/{name}",
-                os.path.join("prebuilt", name),
-                sha256=sha256
+        source_root = Path(self.source_folder) / f"win-split-tunnel-{self._SOURCE_COMMIT}"
+        if not (source_root / "src" / "mullvad-split-tunnel.vcxproj").is_file():
+            candidates = list(Path(self.source_folder).glob("win-split-tunnel-*"))
+            source_root = next(
+                (candidate for candidate in candidates
+                 if (candidate / "src" / "mullvad-split-tunnel.vcxproj").is_file()),
+                None
+            )
+        if source_root is None or not (source_root / "src" / "mullvad-split-tunnel.vcxproj").is_file():
+            raise ConanInvalidConfiguration(
+                "Pinned Mullvad driver source archive does not contain the expected MSBuild project"
             )
 
+        patcher = Path(self.recipe_folder) / "patches" / "apply_reverse_mode_patch.py"
+        if not patcher.is_file():
+            raise ConanInvalidConfiguration(f"Reverse-mode patcher is missing: {patcher}")
+        subprocess.run(
+            [sys.executable, str(patcher), str(source_root)],
+            check=True
+        )
+
+        program_files_x86 = os.environ.get("ProgramFiles(x86)")
+        if not program_files_x86:
+            raise ConanInvalidConfiguration("ProgramFiles(x86) is not available on this Windows runner")
+        vswhere = Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+        if not vswhere.is_file():
+            raise ConanInvalidConfiguration(f"Visual Studio locator was not found: {vswhere}")
+
+        vs_install = subprocess.run(
+            [
+                str(vswhere), "-latest", "-products", "*",
+                "-requires", "Microsoft.Component.MSBuild",
+                "-property", "installationPath"
+            ],
+            check=True, capture_output=True, text=True
+        ).stdout.strip()
+        if not vs_install:
+            raise ConanInvalidConfiguration("Visual Studio MSBuild installation was not found")
+
+        msbuild = Path(vs_install) / "MSBuild" / "Current" / "Bin" / "amd64" / "MSBuild.exe"
+        if not msbuild.is_file():
+            raise ConanInvalidConfiguration(f"64-bit MSBuild was not found: {msbuild}")
+
+        project = source_root / "src" / "mullvad-split-tunnel.vcxproj"
+        self.output.info("Building patched reverse-mode Windows x64 kernel driver")
+        subprocess.run(
+            [
+                str(msbuild), str(project), "/m",
+                "/p:Configuration=Release",
+                "/p:Platform=x64",
+                "/p:SignMode=Off",
+                "/verbosity:minimal"
+            ],
+            check=True,
+            cwd=str(source_root)
+        )
+
+        sys_candidates = sorted(
+            source_root.rglob("mullvad-split-tunnel.sys"),
+            key=lambda path: ("x64-release" not in str(path).lower(), len(str(path)))
+        )
+        if not sys_candidates:
+            raise ConanInvalidConfiguration("MSBuild completed without producing mullvad-split-tunnel.sys")
+
+        driver_output = sys_candidates[0].parent
+        required_files = ("mullvad-split-tunnel.sys", "mullvad-split-tunnel.inf")
+        package_input = Path(self.build_folder) / "driver-package"
+        package_input.mkdir(parents=True, exist_ok=True)
+        for filename in required_files:
+            source_file = driver_output / filename
+            if not source_file.is_file():
+                raise ConanInvalidConfiguration(
+                    f"Built driver package is missing required file: {source_file}"
+                )
+            (package_input / filename).write_bytes(source_file.read_bytes())
+
+        # The unsigned development build may or may not emit a catalog.
+        catalog = driver_output / "mullvad-split-tunnel.cat"
+        if catalog.is_file():
+            (package_input / catalog.name).write_bytes(catalog.read_bytes())
+
+        self.output.info(f"Using patched driver output from: {driver_output}")
+
     def package(self):
-        copy(self, "*", src="prebuilt", dst=os.path.join(self.package_folder, "bin"))
+        copy(
+            self,
+            "*",
+            src=os.path.join(self.build_folder, "driver-package"),
+            dst=os.path.join(self.package_folder, "bin")
+        )
 
     def package_info(self):
         self.cpp_info.set_property("cmake_target_name", "mullvad::win-split-tunnel")
