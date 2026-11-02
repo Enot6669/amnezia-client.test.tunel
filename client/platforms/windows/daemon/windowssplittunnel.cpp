@@ -110,6 +110,9 @@ using ProcessInfo = struct {
 #define IOCTL_SET_CONFIGURATION \
   CTL_CODE(0x8000, 6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_SET_CONFIGURATION_REVERSE \
+  CTL_CODE(0x8000, 12, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 #define IOCTL_GET_CONFIGURATION \
   CTL_CODE(0x8000, 7, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -308,7 +311,7 @@ WindowsSplitTunnel::~WindowsSplitTunnel() {
   uninstallDriver();
 }
 
-bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
+bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths, bool selectedAppsViaVpn) {
   auto state = getState();
   if (state != STATE_READY && state != STATE_RUNNING) {
     logger.warning() << "Driver is not in the right State to set Rules"
@@ -324,7 +327,10 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
   }
 
   DWORD bytesReturned;
-  auto ok = DeviceIoControl(m_driver, IOCTL_SET_CONFIGURATION, &config[0],
+  const DWORD configurationIoctl = selectedAppsViaVpn
+      ? IOCTL_SET_CONFIGURATION_REVERSE
+      : IOCTL_SET_CONFIGURATION;
+  auto ok = DeviceIoControl(m_driver, configurationIoctl, &config[0],
                             (DWORD)config.size(), nullptr, 0, &bytesReturned,
                             nullptr);
   if (!ok) {
