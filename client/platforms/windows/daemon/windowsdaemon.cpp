@@ -51,11 +51,13 @@ WindowsDaemon::~WindowsDaemon() {
 }
 
 bool WindowsDaemon::validateConfig(const InterfaceConfig& config) {
-  // The upstream 1.3.0.0 driver only supports excluding configured processes
-  // from the VPN. Reject allow-list mode before changing routes or interfaces.
-  if (config.m_appsRouteMode == 1) {
-    logger.error() << "Selected-apps-through-VPN mode is not supported by "
-                      "the current split-tunnel driver build";
+  // Reverse mode is accepted only when the loaded kernel driver explicitly
+  // advertises the capability. Legacy signed drivers fail closed here.
+  if (config.m_appsRouteMode == 1 &&
+      (m_splitTunnelManager == nullptr ||
+       !m_splitTunnelManager->supportsReverseMode())) {
+    logger.error() << "Selected-apps-through-VPN mode requires the custom "
+                      "reverse-mode split-tunnel driver";
     emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
     return false;
   }
