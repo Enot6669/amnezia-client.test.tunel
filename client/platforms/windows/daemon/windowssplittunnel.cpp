@@ -320,7 +320,7 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths, bool selectedA
   }
 
   logger.debug() << "Pushing new Ruleset for Split-Tunnel " << state;
-  auto config = generateAppConfiguration(appPaths);
+  auto config = generateAppConfiguration(appPaths, selectedAppsViaVpn);
   if (config.empty()) {
     logger.error() << "No valid split-tunnel application rules generated";
     return false;
@@ -448,7 +448,7 @@ WindowsSplitTunnel::DRIVER_STATE WindowsSplitTunnel::getState() {
 }
 
 std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
-    const QStringList& appPaths) {
+    const QStringList& appPaths, bool allowEmpty) {
   // Step 1: Calculate how much size the buffer will need
   size_t cummulated_string_size = 0;
   QStringList dosPaths;
@@ -465,7 +465,14 @@ std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
     cummulated_string_size += dosPath.toStdWString().size() * sizeof(wchar_t);
   }
   if (dosPaths.isEmpty()) {
-    return {};
+    if (!allowEmpty) {
+      return {};
+    }
+    std::vector<uint8_t> emptyConfiguration(sizeof(CONFIGURATION_HEADER));
+    auto header = reinterpret_cast<CONFIGURATION_HEADER*>(emptyConfiguration.data());
+    header->NumEntries = 0;
+    header->TotalLength = emptyConfiguration.size();
+    return emptyConfiguration;
   }
   size_t bufferSize = sizeof(CONFIGURATION_HEADER) +
                       (sizeof(CONFIGURATION_ENTRY) * dosPaths.size()) +
