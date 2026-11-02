@@ -308,7 +308,8 @@ WindowsSplitTunnel::~WindowsSplitTunnel() {
   uninstallDriver();
 }
 
-bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths,\n                                     bool selectedAppsViaVpn) {
+bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths,
+                                     bool selectedAppsViaVpn) {
   auto state = getState();
   if (state != STATE_READY && state != STATE_RUNNING) {
     logger.warning() << "Driver is not in the right State to set Rules"
