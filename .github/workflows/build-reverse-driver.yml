@@ -58,11 +58,15 @@ jobs:
           if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
             throw "WDK installer signature validation failed: $($signature.Status)"
           }
-          $process = Start-Process -FilePath $installer -ArgumentList '/q' -Wait -PassThru
-          if ($process.ExitCode -notin @(0, 3010)) {
+          $process = Start-Process -FilePath $installer -ArgumentList '/quiet /norestart' -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010, 2008)) {
             throw "Windows Driver Kit installation failed with exit code $($process.ExitCode)"
           }
-          Write-Host "WDK installer completed with exit code $($process.ExitCode)"
+          $wdkRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots' -ErrorAction SilentlyContinue).WdkBinRootVersioned
+          if (!$wdkRoot -or $wdkRoot -notmatch '10\.0\.26100') {
+            throw "Expected WDK 10.0.26100 was not registered. Detected root: $wdkRoot"
+          }
+          Write-Host "Verified WDK installation: $wdkRoot (installer exit $($process.ExitCode))"
       - name: Set up Visual Studio developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
