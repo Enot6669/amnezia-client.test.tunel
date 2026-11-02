@@ -395,4 +395,10 @@ edit("src/ioctl.cpp", [(
         Entry->TargetSettings.Split =
 """)])
 
+edit("src/ioctl.cpp", [(
+"""    RtlZeroMemory(&Context->IpAddresses, sizeof(Context->IpAddresses));""",
+"""    RtlZeroMemory(&Context->IpAddresses, sizeof(Context->IpAddresses));
+    Context->ReverseMode = false;"""
+)])
+
 print("Reverse-mode driver patch applied successfully.")
