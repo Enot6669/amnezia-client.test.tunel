@@ -30,6 +30,9 @@ edit("src/defs/ioctl.h", [(
 // structure and legacy IOCTL remain binary-compatible.
 #define IOCTL_ST_SET_CONFIGURATION_REVERSE \\
 \tCTL_CODE(ST_DEVICE_TYPE, 12, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_ST_GET_CAPABILITIES \\
+\tCTL_CODE(ST_DEVICE_TYPE, 13, METHOD_BUFFERED, FILE_ANY_ACCESS)
 """)])
 
 edit("src/devicecontext.h", [(
@@ -400,5 +403,40 @@ edit("src/ioctl.cpp", [(
 """    RtlZeroMemory(&Context->IpAddresses, sizeof(Context->IpAddresses));
     Context->ReverseMode = false;"""
 )])
+
+edit("src/driverentry.cpp", [(
+"""    if (IoControlCode == IOCTL_ST_GET_STATE)
+    {
+        ioctl::GetStateComplete(device, Request);
+
+        return;
+    }
+""",
+"""    if (IoControlCode == IOCTL_ST_GET_STATE)
+    {
+        ioctl::GetStateComplete(device, Request);
+
+        return;
+    }
+
+    // Capability query is available in every driver state. Older signed
+    // upstream binaries do not recognize this IOCTL and therefore fail closed.
+    if (IoControlCode == IOCTL_ST_GET_CAPABILITIES)
+    {
+        PVOID outputBuffer;
+        size_t outputBufferLength;
+        auto status = WdfRequestRetrieveOutputBuffer(
+            Request, sizeof(ULONG), &outputBuffer, &outputBufferLength);
+        if (!NT_SUCCESS(status))
+        {
+            WdfRequestComplete(Request, status);
+            return;
+        }
+
+        *(ULONG*)outputBuffer = 0x00000001; // Reverse split mode supported.
+        WdfRequestCompleteWithInformation(Request, STATUS_SUCCESS, sizeof(ULONG));
+        return;
+    }
+""")])
 
 print("Reverse-mode driver patch applied successfully.")
