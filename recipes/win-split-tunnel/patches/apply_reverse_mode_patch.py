@@ -362,4 +362,37 @@ edit("src/ioctl.cpp", [(
 """)])
 
 
+
+edit("src/procmgmt/procmgmt.cpp", [(
+"""    if (*Context->ReverseMode)
+    {
+        if (!registeredimage::HasEntryExact""",
+"""    if (*Context->ReverseMode)
+    {
+        // Some kernel/system processes have no image path and cannot be
+        // represented by an ALE_APP_ID WFP filter. Leave those unsplit.
+        if (RegistryEntry->ImageName.Length == 0)
+        {
+            return;
+        }
+
+        if (!registeredimage::HasEntryExact""")])
+
+edit("src/ioctl.cpp", [(
+"""    if (context->ReverseMode)
+    {
+        Entry->TargetSettings.Split =
+""",
+"""    if (context->ReverseMode)
+    {
+        // Do not create an ALE_APP_ID filter for a process with no image path.
+        if (Entry->ImageName.Length == 0)
+        {
+            Entry->TargetSettings.Split = ST_PROCESS_SPLIT_STATUS_OFF;
+            return true;
+        }
+
+        Entry->TargetSettings.Split =
+""")])
+
 print("Reverse-mode driver patch applied successfully.")
