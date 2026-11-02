@@ -40,6 +40,8 @@ class InterfaceConfig {
   QList<IPAddress> m_allowedIPAddressRanges;
   QStringList m_excludedAddresses;
   QStringList m_vpnDisabledApps;
+  // AppsRouteMode from the client: 0=all apps, 1=selected apps via VPN, 2=selected apps direct.
+  int m_appsRouteMode = 0;
   QStringList m_allowedDnsServers;
   bool m_killSwitchEnabled;
 #if defined(MZ_ANDROID) || defined(MZ_IOS)
