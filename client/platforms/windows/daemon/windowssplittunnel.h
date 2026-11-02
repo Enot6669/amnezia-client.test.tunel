@@ -57,6 +57,9 @@ class WindowsSplitTunnel final {
   // Returns true if the split-tunnel driver is now up and running.
   bool isRunning();
 
+  // Probe the dedicated reverse-mode IOCTL without changing driver state.
+  bool supportsReverseMode() const;
+
   static bool detectConflict();
 
   // States for GetState
