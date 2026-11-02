@@ -39,6 +39,11 @@ class Daemon : public QObject {
   // Callback before any Activating measure is done
   virtual void prepareActivation(const InterfaceConfig& config, int inetAdapterIndex = 0) {
       Q_UNUSED(config)  };
+  // Validate platform-specific routing modes before changing interfaces or routes.
+  virtual bool validateConfig(const InterfaceConfig& config) {
+      Q_UNUSED(config);
+      return true;
+  }
   virtual void activateSplitTunnel(const InterfaceConfig& config, int vpnAdapterIndex = 0) {
       Q_UNUSED(config)  };
 
