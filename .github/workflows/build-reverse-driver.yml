@@ -67,7 +67,12 @@ jobs:
             throw 'The x86 WDK InfVerif.dll was not found. Refusing to report a driver build with skipped INF validation as successful.'
           }
           New-Item -ItemType Directory -Force -Path $target | Out-Null
-          Copy-Item (Join-Path $verifier.Directory.FullName '*') $target -Recurse -Force
+          if ([IO.Path]::GetFullPath($verifier.Directory.FullName).TrimEnd('\\') -ine [IO.Path]::GetFullPath($target).TrimEnd('\\')) {
+            Copy-Item (Join-Path $verifier.Directory.FullName '*') $target -Recurse -Force
+          }
+          if (!(Test-Path (Join-Path $target 'InfVerif.dll'))) {
+            throw 'InfVerif.dll was not installed into the WDK build-tools directory.'
+          }
           Write-Host "Prepared x86 INF verifier files from $($verifier.Directory.FullName)"
 
       - name: Build unsigned x64 driver
