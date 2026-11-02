@@ -50,6 +50,18 @@ WindowsDaemon::~WindowsDaemon() {
   logger.debug() << "Daemon released";
 }
 
+bool WindowsDaemon::validateConfig(const InterfaceConfig& config) {
+  // The upstream 1.3.0.0 driver only supports excluding configured processes
+  // from the VPN. Reject allow-list mode before changing routes or interfaces.
+  if (config.m_appsRouteMode == 1 && !config.m_vpnDisabledApps.isEmpty()) {
+    logger.error() << "Selected-apps-through-VPN mode is not supported by "
+                      "the current split-tunnel driver build";
+    emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
+    return false;
+  }
+  return true;
+}
+
 void WindowsDaemon::prepareActivation(const InterfaceConfig& config, int inetAdapterIndex) {
   // Before creating the interface we need to check which adapter
   // routes to the server endpoint
@@ -91,17 +103,6 @@ void WindowsDaemon::activateSplitTunnel(const InterfaceConfig& config, int vpnAd
 }
 
 bool WindowsDaemon::run(Op op, const InterfaceConfig& config) {
-  // The upstream 1.3.0.0 driver only supports excluding the configured
-  // processes from the VPN. Never silently interpret the allow-list mode as
-  // an exclusion list: that would route precisely the wrong applications.
-  if (op != Down && config.m_appsRouteMode == 1 &&
-      !config.m_vpnDisabledApps.isEmpty()) {
-    logger.error() << "Selected-apps-through-VPN mode is not supported by "
-                      "the current split-tunnel driver build";
-    emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
-    return false;
-  }
-
   if (!m_splitTunnelManager) {
     if (config.m_vpnDisabledApps.length() > 0) {
       // The Client has sent us a list of disabled apps, but we failed
