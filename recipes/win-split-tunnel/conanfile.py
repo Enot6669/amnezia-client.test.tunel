@@ -14,7 +14,7 @@ class WinSplitTunnel(ConanFile):
     name = "win-split-tunnel"
     version = "1.3.0.0"
     settings = "os", "arch"
-    exports_sources = "patches/*"
+    exports_sources = "patches/**"
 
     # Build the exact upstream source revision with Amnezia's reverse-mode patch.
     # Do not fetch Mullvad's prebuilt signed SYS: it does not implement reverse mode.
