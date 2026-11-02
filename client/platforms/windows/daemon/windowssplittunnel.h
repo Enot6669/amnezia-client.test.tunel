@@ -40,7 +40,7 @@ class WindowsSplitTunnel final {
    */
   WindowsSplitTunnel(HANDLE driverIO);
   /**
-   * @brief Destroy the Windows Split Tunnel object and uninstalls the Driver.
+   * @brief Destroy the object and stop the demand-start driver service.
    */
   ~WindowsSplitTunnel();
 
@@ -75,8 +75,6 @@ class WindowsSplitTunnel final {
  private:
   // Installes the Kernel Driver as Driver Service
   static SC_HANDLE installDriver();
-  static bool uninstallDriver();
-  static bool isInstalled();
   static bool initDriver(HANDLE driverIO);
   static DRIVER_STATE getState(HANDLE driverIO);
   static bool resetDriver(HANDLE driverIO);
