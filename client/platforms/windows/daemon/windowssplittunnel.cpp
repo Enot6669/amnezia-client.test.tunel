@@ -48,7 +48,12 @@ using CONFIGURATION_HEADER = struct {
 
   // Total byte length: header + entries + string buffer.
   SIZE_T TotalLength;
+
+  // Bit 0: selected applications use VPN (reverse split tunnel).
+  ULONG Flags;
 };
+
+constexpr ULONG CONFIGURATION_FLAG_SELECTED_APPS_USE_VPN = 0x00000001;
 
 // Used to Configure Which IP is network/vpn
 using IP_ADDRESSES_CONFIG = struct {
@@ -492,6 +497,9 @@ std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
 
   header->NumEntries = dosPaths.length();
   header->TotalLength = bufferSize;
+  header->Flags = selectedAppsViaVpn
+                      ? CONFIGURATION_FLAG_SELECTED_APPS_USE_VPN
+                      : 0;
 
   return outBuffer;
 }
