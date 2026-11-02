@@ -329,18 +329,10 @@ edit("src/ioctl.cpp", [
 (
 """    if (header->NumEntries == 0)
     {
-        DbgPrint("Cannot assign empty configuration\\n");
-
-        return STATUS_INVALID_PARAMETER;
-    }
-""",
+        DbgPrint("Cannot assign empty configuration""",
 """    if (header->NumEntries == 0 && !ReverseMode)
     {
-        DbgPrint("Cannot assign empty legacy configuration\\n");
-
-        return STATUS_INVALID_PARAMETER;
-    }
-"""),
+        DbgPrint("Cannot assign empty legacy configuration"""),
 (
 """    if (registeredimage::IsEmpty(Context->RegisteredImage.Instance))
     {
