@@ -313,8 +313,19 @@ WindowsSplitTunnel::WindowsSplitTunnel(HANDLE driverIO) : m_driver(driverIO) {
 }
 
 WindowsSplitTunnel::~WindowsSplitTunnel() {
-  CloseHandle(m_driver);
-  uninstallDriver();
+  if (m_driver != INVALID_HANDLE_VALUE) {
+    CloseHandle(m_driver);
+    m_driver = INVALID_HANDLE_VALUE;
+  }
+
+  // Keep the service registration so the next application start can update
+  // its ImagePath. Stop the demand-start driver instead of deleting a running
+  // kernel service (DeleteService would only mark it for deletion).
+  auto serviceManager =
+      WindowsServiceManager::open(QString::fromWCharArray(DRIVER_SERVICE_NAME));
+  if (serviceManager && !serviceManager->stopService()) {
+    logger.error() << "Failed to stop Split Tunnel driver during shutdown";
+  }
 }
 
 bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths, bool selectedAppsViaVpn) {
@@ -682,7 +693,7 @@ SC_HANDLE WindowsSplitTunnel::installDriver() {
 
   auto service = CreateService(
       serviceManager, DRIVER_SERVICE_NAME, displayName,
-      SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START,
+      SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
       SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
       nullptr, nullptr);
 
@@ -705,7 +716,7 @@ SC_HANDLE WindowsSplitTunnel::installDriver() {
     }
 
     if (!ChangeServiceConfig(
-            service, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START,
+            service, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
             SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
             nullptr, nullptr, displayName)) {
       WindowsUtils::windowsLog("ChangeServiceConfig failed for Split Tunnel");
