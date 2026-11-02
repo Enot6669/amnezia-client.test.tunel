@@ -22,6 +22,7 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QDir>
 #include <QNetworkInterface>
 #include <QScopeGuard>
 #include <QUrl>
@@ -204,19 +205,15 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
     logger.error() << "Conflict detected, abort Split-Tunnel init.";
     return nullptr;
   }
-  // 01: Check if the driver is installed, if not do so.
-  if (!isInstalled()) {
-    logger.debug() << "Driver is not Installed, doing so";
-    auto handle = installDriver();
-    if (handle == INVALID_HANDLE_VALUE) {
-      WindowsUtils::windowsLog("Failed to install Driver");
-      return nullptr;
-    }
-    logger.debug() << "Driver installed";
-    CloseServiceHandle(handle);
-  } else {
-    logger.debug() << "Driver was installed";
+  // Always reconcile the service ImagePath with the driver shipped
+  // beside this application. Restarting alone would reload the old path.
+  auto serviceHandle = installDriver();
+  if (serviceHandle == INVALID_HANDLE_VALUE || serviceHandle == nullptr) {
+    WindowsUtils::windowsLog("Failed to install or update Split Tunnel service");
+    return nullptr;
   }
+  CloseServiceHandle(serviceHandle);
+  logger.debug() << "Split Tunnel service image path is up to date";
   // 02: Now check if the service is running
   auto driver_manager =
       WindowsServiceManager::open(QString::fromWCharArray(DRIVER_SERVICE_NAME));
@@ -668,21 +665,60 @@ std::vector<uint8_t> WindowsSplitTunnel::generateProcessBlob() {
 SC_HANDLE WindowsSplitTunnel::installDriver() {
   LPCWSTR displayName = L"Amnezia Split Tunnel Service";
   QFileInfo driver(qApp->applicationDirPath() + "/" + DRIVER_FILENAME);
-  if (!driver.exists()) {
+  if (!driver.exists() || !driver.isFile()) {
     logger.error() << "Split Tunnel Driver File not found "
                    << driver.absoluteFilePath();
     return (SC_HANDLE)INVALID_HANDLE_VALUE;
   }
-  auto path = driver.absolutePath() + "/" + DRIVER_FILENAME;
-  auto binPath = (const wchar_t*)path.utf16();
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(nullptr,  // local computer
-                                      nullptr,  // servicesActive database
-                                      scm_rights);
+
+  const QString nativePath = QDir::toNativeSeparators(driver.absoluteFilePath());
+  const std::wstring binPath = nativePath.toStdWString();
+  auto serviceManager = OpenSCManager(
+      nullptr, nullptr, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
+  if (serviceManager == nullptr) {
+    WindowsUtils::windowsLog("OpenSCManager failed while installing driver");
+    return (SC_HANDLE)INVALID_HANDLE_VALUE;
+  }
+
   auto service = CreateService(
-      serviceManager, DRIVER_SERVICE_NAME, displayName, SERVICE_ALL_ACCESS,
-      SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, binPath,
-      nullptr, nullptr, nullptr, nullptr, nullptr);
+      serviceManager, DRIVER_SERVICE_NAME, displayName,
+      SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START,
+      SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
+      nullptr, nullptr);
+
+  if (service == nullptr) {
+    const DWORD createError = GetLastError();
+    if (createError != ERROR_SERVICE_EXISTS) {
+      logger.error() << "CreateService failed:" << createError;
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+
+    service = OpenService(
+        serviceManager, DRIVER_SERVICE_NAME,
+        SERVICE_CHANGE_CONFIG | SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS |
+            SERVICE_START | SERVICE_STOP);
+    if (service == nullptr) {
+      WindowsUtils::windowsLog("OpenService failed while updating driver path");
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+
+    if (!ChangeServiceConfig(
+            service, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START,
+            SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
+            nullptr, nullptr, displayName)) {
+      WindowsUtils::windowsLog("ChangeServiceConfig failed for Split Tunnel");
+      CloseServiceHandle(service);
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+    logger.info() << "Updated Split Tunnel service ImagePath to"
+                  << nativePath;
+  } else {
+    logger.info() << "Created Split Tunnel service for" << nativePath;
+  }
+
   CloseServiceHandle(serviceManager);
   return service;
 }
