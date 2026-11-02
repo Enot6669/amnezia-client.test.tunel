@@ -50,21 +50,26 @@ jobs:
         run: |
           $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
           $target = Join-Path $kits 'build\10.0.26100.0\x86'
-          $verifier = Get-ChildItem -Path $kits -Filter 'InfVerif.dll' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($verifier) {
-            New-Item -ItemType Directory -Force -Path $target | Out-Null
-            Copy-Item $verifier.FullName (Join-Path $target 'InfVerif.dll') -Force
-            Write-Host "Prepared InfVerif.dll from $($verifier.FullName)"
-          } else {
-            Write-Host 'InfVerif.dll was not found in the installed WDK; MSBuild output will be reviewed for INF validation diagnostics.'
+          $verifier = Get-ChildItem -Path $kits -Filter 'InfVerif.dll' -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -ieq 'x86' } |
+            Select-Object -First 1
+          if (!$verifier) {
+            throw 'The x86 WDK InfVerif.dll was not found. Refusing to report a driver build with skipped INF validation as successful.'
           }
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item (Join-Path $verifier.Directory.FullName '*') $target -Recurse -Force
+          Write-Host "Prepared x86 INF verifier files from $($verifier.Directory.FullName)"
 
       - name: Build unsigned x64 driver
         shell: pwsh
         run: |
           $project = Join-Path $env:DRIVER_SOURCE 'src\mullvad-split-tunnel.vcxproj'
-          msbuild $project /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /verbosity:minimal
-          if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE. Check that the Windows Driver Kit is available on this runner." }
+          msbuild $project /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /verbosity:minimal 2>&1 | Tee-Object -FilePath driver-build.log
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) { throw "MSBuild failed with exit code $buildExitCode. Check that the Windows Driver Kit is available on this runner." }
+          if (Select-String -Path driver-build.log -Pattern 'INF verification exception|error C[0-9]+|fatal error' -Quiet) {
+            throw 'MSBuild reported a driver or INF verification error even though its exit code was zero.'
+          }
 
       - name: Collect driver package
         shell: pwsh
