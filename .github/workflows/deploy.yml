@@ -150,7 +150,7 @@ jobs:
 # ------------------------------------------------------
 
   Bake-Prebuilts-Windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: Detect-Changes
     if: needs.Detect-Changes.outputs.recipes_changed == 'true'
 
@@ -187,7 +187,7 @@ jobs:
 # ------------------------------------------------------
 
   Build-Windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     needs: Bake-Prebuilts-Windows
     if: ${{ always() }}
@@ -1293,7 +1293,7 @@ jobs:
           - OpenSSLLibraryTest
           - GatewayServiceImportTest
 
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       QT_VERSION: 6.10.1
