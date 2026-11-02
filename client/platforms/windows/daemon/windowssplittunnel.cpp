@@ -113,6 +113,9 @@ using ProcessInfo = struct {
 #define IOCTL_SET_CONFIGURATION_REVERSE \
   CTL_CODE(0x8000, 12, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_GET_CAPABILITIES \
+  CTL_CODE(0x8000, 13, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 #define IOCTL_GET_CONFIGURATION \
   CTL_CODE(0x8000, 7, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -341,6 +344,16 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths, bool selectedA
   }
   logger.debug() << "New Configuration applied: " << stateString();
   return true;
+}
+
+bool WindowsSplitTunnel::supportsReverseMode() const {
+  DWORD capabilities = 0;
+  DWORD bytesReturned = 0;
+  const BOOL ok = DeviceIoControl(
+      m_driver, IOCTL_GET_CAPABILITIES, nullptr, 0, &capabilities,
+      sizeof(capabilities), &bytesReturned, nullptr);
+  return ok && bytesReturned == sizeof(capabilities) &&
+         (capabilities & 0x00000001) != 0;
 }
 
 bool WindowsSplitTunnel::start(int inetAdapterIndex, int vpnAdapterIndex) {
