@@ -35,9 +35,34 @@ jobs:
       - name: Install complete Windows Driver Kit
         shell: pwsh
         run: |
-          winget install --id Microsoft.WindowsWDK.10.0.26100 --exact --silent --accept-package-agreements --accept-source-agreements
-          if ($LASTEXITCODE -ne 0) { throw "Windows Driver Kit installation failed with exit code $LASTEXITCODE" }
-
+          # GitHub-hosted Windows Server images do not guarantee WinGet.
+          # Download the official Microsoft WDK installer directly.
+          $installer = Join-Path $env:RUNNER_TEMP 'wdksetup.exe'
+          $downloadUrls = @(
+            'https://go.microsoft.com/fwlink/?linkid=2196230'
+          )
+          $downloaded = $false
+          foreach ($url in $downloadUrls) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRedirection 10
+              if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 50MB) {
+                $downloaded = $true
+                break
+              }
+            } catch {
+              Write-Warning "WDK download attempt failed: $($_.Exception.Message)"
+            }
+          }
+          if (!$downloaded) { throw 'Could not download the official Windows Driver Kit installer.' }
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
+            throw "WDK installer signature validation failed: $($signature.Status)"
+          }
+          $process = Start-Process -FilePath $installer -ArgumentList '/quiet','/norestart' -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Windows Driver Kit installation failed with exit code $($process.ExitCode)"
+          }
+          Write-Host "WDK installer completed with exit code $($process.ExitCode)"
       - name: Set up Visual Studio developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
