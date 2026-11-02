@@ -489,11 +489,15 @@ function(conan_install)
         set(ENV{PATH} "$ENV{PATH}:${PATH_TO_CMAKE_BIN}")
     endif()
 
-    execute_process(COMMAND ${CONAN_COMMAND} install ${CMAKE_SOURCE_DIR} ${conan_args} ${ARGN} --format=json
+    # Capture Conan's machine-readable graph in a file. This avoids relying on
+    # stdout capture from the Conan CLI wrapper on Windows.
+    set(conan_graph_file "${CMAKE_BINARY_DIR}/conan_install_graph.json")
+    file(REMOVE "${conan_graph_file}")
+
+    execute_process(COMMAND ${CONAN_COMMAND} install ${CMAKE_SOURCE_DIR} ${conan_args} ${ARGN}
+                            --format=json "--out-file=${conan_graph_file}"
                     RESULT_VARIABLE return_code
-                    OUTPUT_VARIABLE conan_stdout
-                    ERROR_VARIABLE conan_stderr
-                    ECHO_ERROR_VARIABLE    # show the text output regardless
+                    ECHO_ERROR_VARIABLE    # keep Conan diagnostics visible
                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
     if(DEFINED PATH_TO_CMAKE_BIN)
@@ -504,9 +508,12 @@ function(conan_install)
         message(FATAL_ERROR "Conan install failed='${return_code}'")
     endif()
 
-    # the files are generated in a folder that depends on the layout used, if
-    # one is specified, but we don't know a priori where this is.
-    # TODO: this can be made more robust if Conan can provide this in the json output
+    if(NOT EXISTS "${conan_graph_file}")
+        message(FATAL_ERROR "Conan install succeeded but did not create its graph JSON file: ${conan_graph_file}")
+    endif()
+    file(READ "${conan_graph_file}" conan_stdout)
+
+    # The generators folder depends on the layout used by the recipe.
     string(JSON conan_generators_folder GET "${conan_stdout}" graph nodes 0 generators_folder)
     cmake_path(CONVERT ${conan_generators_folder} TO_CMAKE_PATH_LIST conan_generators_folder)
 
