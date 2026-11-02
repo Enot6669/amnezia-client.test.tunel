@@ -15,9 +15,10 @@ runs:
         }
         if (!(Test-Path $installer)) { throw 'WDK installer was not created.' }
         $downloadLength = (Get-Item $installer).Length
-        if ($downloadLength -lt 50MB) {
-          throw "Downloaded WDK installer is unexpectedly small ($downloadLength bytes)."
+        if ($downloadLength -lt 1MB) {
+          throw "Downloaded WDK bootstrapper is unexpectedly small ($downloadLength bytes)."
         }
+        Write-Host "Downloaded Microsoft WDK bootstrapper ($downloadLength bytes); proceeding with signature verification and installation."
         $signature = Get-AuthenticodeSignature $installer
         if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
           throw "WDK installer signature validation failed: $($signature.Status)"
