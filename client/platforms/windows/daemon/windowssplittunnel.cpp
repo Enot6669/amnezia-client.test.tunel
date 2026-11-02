@@ -806,28 +806,6 @@ bool WindowsSplitTunnel::detectConflict() {
   return err == ERROR_SERVICE_DOES_NOT_EXIST;
 }
 
-bool WindowsSplitTunnel::supportsReverseMode() const {
-  if (m_driver == INVALID_HANDLE_VALUE) {
-    return false;
-  }
-
-  // The new driver recognizes this IOCTL but rejects the deliberately empty
-  // request buffer with ERROR_INSUFFICIENT_BUFFER. The old driver returns
-  // ERROR_INVALID_FUNCTION. No configuration is modified by this probe.
-  DWORD bytesReturned = 0;
-  const BOOL ok = DeviceIoControl(
-      m_driver, IOCTL_SET_CONFIGURATION_REVERSE, nullptr, 0, nullptr, 0,
-      &bytesReturned, nullptr);
-  if (ok) {
-    return true;
-  }
-
-  const DWORD error = GetLastError();
-  return error == ERROR_INSUFFICIENT_BUFFER ||
-         error == ERROR_INVALID_PARAMETER ||
-         error == ERROR_BAD_LENGTH;
-}
-
 bool WindowsSplitTunnel::isRunning() { return getState() == STATE_RUNNING; }
 QString WindowsSplitTunnel::stateString() {
   switch (getState()) {
