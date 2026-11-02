@@ -37,6 +37,11 @@ using CONFIGURATION_ENTRY = struct {
   USHORT ImageNameLength;
 };
 
+using ST_SUBLAYER_GUIDS = struct {
+  GUID Baseline;
+  GUID Dns;
+};
+
 using CONFIGURATION_HEADER = struct {
   // Number of entries immediately following the header.
   SIZE_T NumEntries;
@@ -88,7 +93,7 @@ using ProcessInfo = struct {
 #endif
 
 // Known ControlCodes
-#define IOCTL_INITIALIZE CTL_CODE(0x8000, 1, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_INITIALIZE CTL_CODE(0x8000, 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_DEQUEUE_EVENT \
   CTL_CODE(0x8000, 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -147,6 +152,21 @@ ProcessInfo getProcessInfo(HANDLE process, const PROCESSENTRY32W& processMeta) {
     pi.DevicePath = imagepath;
   }
   return pi;
+}
+
+bool initializeDriverWithSublayers(HANDLE driverIO) {
+  // Mullvad win-split-tunnel 1.3.0.0 requires the two WFP sublayer GUIDs
+  // as a buffered input payload during initialization.
+  ST_SUBLAYER_GUIDS sublayers = {
+      {0xc78056ff, 0x2bc1, 0x4211,
+       {0xaa, 0xdd, 0x7f, 0x35, 0x8d, 0xef, 0x20, 0x2d}},
+      {0x60090787, 0xcca1, 0x4937,
+       {0xaa, 0xce, 0x51, 0x25, 0x6e, 0xf4, 0x81, 0xf3}},
+  };
+  DWORD bytesReturned = 0;
+  return DeviceIoControl(driverIO, IOCTL_INITIALIZE, &sublayers,
+                         sizeof(sublayers), nullptr, 0, &bytesReturned,
+                         nullptr);
 }
 
 QString normalizeExecutablePath(const QString& path) {
@@ -265,9 +285,7 @@ bool WindowsSplitTunnel::initDriver(HANDLE driverIO) {
     }
   }
 
-  DWORD bytesReturned;
-  auto ok = DeviceIoControl(driverIO, IOCTL_INITIALIZE, nullptr, 0, nullptr, 0,
-                            &bytesReturned, nullptr);
+  auto ok = initializeDriverWithSublayers(driverIO);
   if (!ok) {
     auto err = GetLastError();
     logger.error() << "Driver init failed err -" << err;
@@ -327,9 +345,7 @@ bool WindowsSplitTunnel::start(int inetAdapterIndex, int vpnAdapterIndex) {
 
   if (getState() == STATE_STARTED) {
     logger.debug() << "Driver needs Init Call";
-    DWORD bytesReturned;
-    auto ok = DeviceIoControl(m_driver, IOCTL_INITIALIZE, nullptr, 0, nullptr,
-                              0, &bytesReturned, nullptr);
+    auto ok = initializeDriverWithSublayers(m_driver);
     if (!ok) {
       logger.error() << "Driver init failed. Error:" << GetLastError();
       return false;
