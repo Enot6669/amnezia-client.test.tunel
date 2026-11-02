@@ -94,17 +94,28 @@ class WinSplitTunnel(ConanFile):
 
         project = source_root / "src" / "mullvad-split-tunnel.vcxproj"
         self.output.info("Building patched reverse-mode Windows x64 kernel driver")
-        subprocess.run(
+        build_result = subprocess.run(
             [
                 str(msbuild), str(project), "/m",
                 "/p:Configuration=Release",
                 "/p:Platform=x64",
                 "/p:SignMode=Off",
-                "/verbosity:minimal"
+                "/verbosity:normal"
             ],
-            check=True,
-            cwd=str(source_root)
+            check=False,
+            cwd=str(source_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
         )
+        if build_result.stdout:
+            for line in build_result.stdout.splitlines():
+                self.output.info(f"MSBuild: {line}")
+        if build_result.returncode != 0:
+            raise ConanInvalidConfiguration(
+                f"MSBuild failed with exit code {build_result.returncode}; "
+                "see the MSBuild output above for the compiler error"
+            )
 
         sys_candidates = sorted(
             source_root.rglob("mullvad-split-tunnel.sys"),
