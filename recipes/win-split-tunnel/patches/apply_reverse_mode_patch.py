@@ -259,4 +259,101 @@ edit("src/driverentry.cpp", [(
 """)
 ])
 
+
+edit("src/validation.cpp", [(
+"""    if (STATUS_SUCCESS != status || stringBuffer >= bufferEnd)
+    {
+        return false;
+    }
+""",
+"""    if (STATUS_SUCCESS != status || stringBuffer > bufferEnd)
+    {
+        return false;
+    }
+
+    // An empty allow-list is valid only for reverse mode. The reverse-mode
+    // IOCTL accepts a header-only buffer; legacy mode still rejects it below.
+    if (header->NumEntries == 0)
+    {
+        return stringBuffer == bufferEnd;
+    }
+
+    if (stringBuffer == bufferEnd)
+    {
+        return false;
+    }
+""")])
+
+edit("src/ioctl.h", [(
+"""SetConfigurationPrepare
+(
+    WDFREQUEST Request,
+    registeredimage::CONTEXT **Imageset
+);
+""",
+"""SetConfigurationPrepare
+(
+    WDFREQUEST Request,
+    registeredimage::CONTEXT **Imageset,
+    bool ReverseMode
+);
+""")])
+
+edit("src/ioctl.cpp", [
+(
+"""SetConfigurationPrepare
+(
+    WDFREQUEST Request,
+    registeredimage::CONTEXT **Imageset
+)
+""",
+"""SetConfigurationPrepare
+(
+    WDFREQUEST Request,
+    registeredimage::CONTEXT **Imageset,
+    bool ReverseMode
+)
+"""),
+(
+"""    if (header->NumEntries == 0)
+    {
+        DbgPrint("Cannot assign empty configuration\\\\n");
+
+        return STATUS_INVALID_PARAMETER;
+    }
+""",
+"""    if (header->NumEntries == 0 && !ReverseMode)
+    {
+        DbgPrint("Cannot assign empty legacy configuration\\\\n");
+
+        return STATUS_INVALID_PARAMETER;
+    }
+"""),
+(
+"""    if (registeredimage::IsEmpty(Context->RegisteredImage.Instance))
+    {
+        Context->IpAddresses = *newIpAddresses;
+""",
+"""    if (registeredimage::IsEmpty(Context->RegisteredImage.Instance) && !Context->ReverseMode)
+    {
+        Context->IpAddresses = *newIpAddresses;
+"""),
+(
+"""    registeredimage::Reset(context->RegisteredImage.Instance);
+
+    WdfWaitLockRelease(context->DriverState.Lock);
+""",
+"""    registeredimage::Reset(context->RegisteredImage.Instance);
+    context->ReverseMode = false;
+
+    WdfWaitLockRelease(context->DriverState.Lock);
+""")
+])
+
+edit("src/driverentry.cpp", [(
+"""auto status = ioctl::SetConfigurationPrepare(Request, &imageset);""",
+"""auto status = ioctl::SetConfigurationPrepare(Request, &imageset, reverseMode);"""
+)])
+
+
 print("Reverse-mode driver patch applied successfully.")
