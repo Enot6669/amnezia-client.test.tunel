@@ -19,6 +19,12 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Install complete Windows Driver Kit
+        shell: pwsh
+        run: |
+          winget install --id Microsoft.WindowsWDK.10.0.26100 --exact --silent --accept-package-agreements --accept-source-agreements
+          if ($LASTEXITCODE -ne 0) { throw "Windows Driver Kit installation failed with exit code $LASTEXITCODE" }
+
       - name: Set up Visual Studio developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
