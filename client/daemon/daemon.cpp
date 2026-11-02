@@ -70,6 +70,11 @@ bool Daemon::activate(const InterfaceConfig& config) {
   logger.debug() << "Activating interface";
   auto emit_failure_guard = qScopeGuard([this] { emit activationFailure(); });
 
+  // Validate before touching DNS, routes, peers, or tunnel interfaces.
+  if (!validateConfig(config)) {
+    return false;
+  }
+
   if (m_connections.contains(config.m_hopType)) {
     if (supportServerSwitching(config)) {
       logger.debug() << "Already connected. Server switching supported.";
