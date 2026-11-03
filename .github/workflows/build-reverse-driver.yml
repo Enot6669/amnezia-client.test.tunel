@@ -9,7 +9,8 @@ on:
     branches:
       - reverse-split-tunneling-windows
     paths:
-      - 'recipes/win-split-tunnel/patches/**'
+      - 'recipes/win-split-tunnel/**'
+      - 'client/platforms/windows/daemon/windowssplittunnel.*'
       - '.github/workflows/build-reverse-driver.yml'
   workflow_dispatch:
 
@@ -150,6 +151,25 @@ jobs:
           Compress-Archive -Path (Join-Path $env:DRIVER_SOURCE '*') -DestinationPath $sourceArchive -Force
           Copy-Item $sourceArchive 'driver-artifact\win-split-tunnel-1.3.0.0-amnezia-source.zip'
 
+          # Emit a machine-readable audit record so an unsigned development driver
+          # cannot be mistaken for a production-ready package.
+          $sys = Get-Item 'driver-artifact\mullvad-split-tunnel.sys'
+          $signature = Get-AuthenticodeSignature $sys.FullName
+          $hash = (Get-FileHash $sys.FullName -Algorithm SHA256).Hash
+          $catalogPresent = Test-Path 'driver-artifact\mullvad-split-tunnel.cat'
+          @(
+            'PackageType=UNSIGNED_DEVELOPMENT_ONLY'
+            "DriverVersion=$($sys.VersionInfo.FileVersion)"
+            "DriverLength=$($sys.Length)"
+            "DriverSHA256=$hash"
+            "AuthenticodeStatus=$($signature.Status)"
+            "CatalogPresent=$catalogPresent"
+            'ProductionReady=False'
+            'Note=No production signing certificate is configured in this workflow.'
+          ) | Set-Content 'driver-artifact\DRIVER-BUILD-REPORT.txt' -Encoding utf8
+          if (!$catalogPresent) {
+            Write-Warning 'CAT is absent. The INF package is not complete for Driver Store/PnP installation; direct service loading is separate.'
+          }
           Get-ChildItem 'driver-artifact' | Format-Table Name,Length
 
       - name: Upload unsigned development driver

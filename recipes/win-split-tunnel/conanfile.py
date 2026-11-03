@@ -127,6 +127,11 @@ class WinSplitTunnel(ConanFile):
         driver_output = sys_candidates[0].parent
         required_files = ("mullvad-split-tunnel.sys", "mullvad-split-tunnel.inf")
         package_input = Path(self.build_folder) / "driver-package"
+        # Remove stale files from a previous build so the package cannot mix
+        # outputs from different driver builds.
+        if package_input.exists():
+            import shutil
+            shutil.rmtree(package_input)
         package_input.mkdir(parents=True, exist_ok=True)
         for filename in required_files:
             source_file = driver_output / filename
@@ -140,6 +145,13 @@ class WinSplitTunnel(ConanFile):
         catalog = driver_output / "mullvad-split-tunnel.cat"
         if catalog.is_file():
             (package_input / catalog.name).write_bytes(catalog.read_bytes())
+            self.output.info("Driver catalog found and copied")
+        else:
+            self.output.warning(
+                "No mullvad-split-tunnel.cat was generated. "
+                "This package is development-only and is not a complete "
+                "Driver Store/PnP package; an unsigned SYS is not production-ready."
+            )
 
         self.output.info(f"Using patched driver output from: {driver_output}")
 
