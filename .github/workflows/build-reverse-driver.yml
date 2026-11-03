@@ -51,8 +51,11 @@ jobs:
           if (!(Test-Path $installer)) { throw 'WDK installer was not created.' }
           $downloadLength = (Get-Item $installer).Length
           Write-Host "Downloaded WDK installer: $downloadLength bytes"
-          if ($downloadLength -lt 50MB) {
-            throw "Downloaded WDK installer is unexpectedly small ($downloadLength bytes)."
+          # Microsoft currently serves this as a small signed bootstrapper;
+          # it downloads the WDK payload during installation. Do not require
+          # the bootstrapper itself to be a 50+ MB offline bundle.
+          if ($downloadLength -lt 512KB) {
+            throw "Downloaded WDK bootstrapper is unexpectedly small ($downloadLength bytes)."
           }
           $signature = Get-AuthenticodeSignature $installer
           if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
