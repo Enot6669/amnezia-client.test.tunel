@@ -90,8 +90,9 @@ PageType {
                 text: qsTr("App split tunneling")
 
                 onClicked: {
+                    // toggle() changes checked and emits toggled() itself.
+                    // Do not emit toggled() a second time manually.
                     splitTunnelingSwitch.toggle()
-                    splitTunnelingSwitch.toggled()
                 }
 
                 SwitchType {
