@@ -113,7 +113,7 @@ PageType {
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
 
-                enabled: (Qt.platform.os === "android") && root.pageEnabled
+                enabled: (Qt.platform.os === "android" || Qt.platform.os === "windows") && root.pageEnabled
 
                 model: root.routeModes.map(function(mode) { return mode.segmentName })
                 currentIndex: root.routeModeIndex
@@ -144,16 +144,7 @@ PageType {
                 color: AmneziaStyle.color.textSecondary
             }
 
-            NotificationType {
-                Layout.fillWidth: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 24
 
-                text: qsTr("Only \"Apps from the list should not have access via VPN\" mode is available on Windows")
-
-                visible: (Qt.platform.os === "windows") && root.pageEnabled
-            }
         }
 
         delegate: Item {
