@@ -1084,6 +1084,7 @@ jobs:
     env:
       QT_VERSION: 6.10.1
       QTEST_FUNCTION_TIMEOUT: 7200000
+      BACKUP_FILE_BASE64: ${{ secrets.BACKUP_FILE_BASE64 }}
       THIRD_PARTY_AWG_VPN_KEY: ${{ secrets.THIRD_PARTY_AWG_VPN_KEY }}
       THIRD_PARTY_WIRE_GUARD_VPN_KEY: ${{ secrets.THIRD_PARTY_WIRE_GUARD_VPN_KEY }}
       THIRD_PARTY_XRAY_VPN_KEY: ${{ secrets.THIRD_PARTY_XRAY_VPN_KEY }}
@@ -1165,6 +1166,7 @@ jobs:
           echo "XRAY_BIN=$RUNNER_TEMP/xray/xray" >> "$GITHUB_ENV"
 
       - name: Run tests
+        if: matrix.filter != 'BackupExportImportTest' || env.BACKUP_FILE_BASE64 != ''
         env:
           AMNEZIA_TEST_API_KEY: ${{ secrets.AMNEZIA_TEST_API_KEY }}
         shell: bash
@@ -1324,15 +1326,9 @@ jobs:
           fetch-depth: 10
 
       - name: Decode backup file
-        if: matrix.filter == 'BackupExportImportTest'
+        if: matrix.filter == 'BackupExportImportTest' && env.BACKUP_FILE_BASE64 != ''
         shell: pwsh
-        env:
-          BACKUP_FILE_BASE64: ${{ secrets.BACKUP_FILE_BASE64 }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:BACKUP_FILE_BASE64)) {
-            Write-Output "::error::BACKUP_FILE_BASE64 secret is not set"
-            exit 1
-          }
           $backup = Join-Path $env:RUNNER_TEMP "test.backup"
           $bytes = [Convert]::FromBase64String($env:BACKUP_FILE_BASE64)
           [IO.File]::WriteAllBytes($backup, $bytes)
