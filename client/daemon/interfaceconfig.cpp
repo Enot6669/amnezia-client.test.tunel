@@ -65,6 +65,11 @@ QJsonObject InterfaceConfig::toJson() const {
   }
   json.insert("vpnDisabledApps", disabledApps);
 
+  // Preserve the app split-tunnel routing mode when sending the interface
+  // configuration to the Windows tunnel daemon. The daemon parser consumes
+  // this field to select the reverse (selected apps via VPN) driver mode.
+  json.insert("appSplitTunnelType", m_appsRouteMode);
+
   return json;
 }
 

@@ -76,6 +76,10 @@ namespace amnezia
         OpenVpnUnknownError = 701,
         OpenVpnTapAdapterError = 702,
         AddressPoolError = 703,
+        WindowsSplitTunnelInitError = 704,
+        WindowsSplitTunnelStartError = 705,
+        WindowsSplitTunnelRulesError = 706,
+        WindowsSplitTunnelUnsupportedError = 707,
 
         // 3rd party utils errors
         OpenSslFailed = 800,

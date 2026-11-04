@@ -70,6 +70,11 @@ bool Daemon::activate(const InterfaceConfig& config) {
   logger.debug() << "Activating interface";
   auto emit_failure_guard = qScopeGuard([this] { emit activationFailure(); });
 
+  // Validate before touching DNS, routes, peers, or tunnel interfaces.
+  if (!validateConfig(config)) {
+    return false;
+  }
+
   if (m_connections.contains(config.m_hopType)) {
     if (supportServerSwitching(config)) {
       logger.debug() << "Already connected. Server switching supported.";
@@ -385,6 +390,21 @@ bool Daemon::parseConfig(const QJsonObject& obj, InterfaceConfig& config) {
   }
   if (!parseStringList(obj, "vpnDisabledApps", config.m_vpnDisabledApps)) {
     return false;
+  }
+
+  // Optional for compatibility with older desktop clients.
+  if (obj.contains("appSplitTunnelType")) {
+    const QJsonValue appRouteMode = obj.value("appSplitTunnelType");
+    if (!appRouteMode.isDouble()) {
+      logger.error() << "appSplitTunnelType is not a number";
+      return false;
+    }
+    const int mode = appRouteMode.toInt(-1);
+    if (mode < 0 || mode > 2) {
+      logger.error() << "appSplitTunnelType is out of range:" << mode;
+      return false;
+    }
+    config.m_appsRouteMode = mode;
   }
   if (!parseStringList(obj, "allowedDnsServers", config.m_allowedDnsServers)) {
     return false;

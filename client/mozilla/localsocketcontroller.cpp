@@ -248,6 +248,12 @@ void LocalSocketController::activate(const QJsonObject &rawConfig) {
 
   json.insert("vpnDisabledApps", splitTunnelApps);
 
+#ifdef MZ_WINDOWS
+  // Keep the selected-app routing intent distinct from the app list itself.
+  // The Windows daemon can then reject reverse mode until its driver supports it.
+  json.insert("appSplitTunnelType", appSplitTunnelType);
+#endif
+
   json.insert("allowedDnsServers", allowedDns);
 
   json.insert(amnezia::configKey::killSwitchOption, rawConfig.value(amnezia::configKey::killSwitchOption));
@@ -464,39 +470,49 @@ void LocalSocketController::parseCommand(const QByteArray& command) {
   }
 
   if (type == "backendFailure") {
-    if (!obj.contains("errorCode")) {
-      // report a generic error if we dont know what it is.
-      logger.error() << "generic backend failure error";
-      // REPORTERROR(ErrorHandler::ControllerError, "controller");
+    const QJsonValue errorValue = obj.value("errorCode");
+    if (!errorValue.isDouble()) {
+      logger.error() << "Backend failure did not contain a numeric error code";
+      emit backendFailure(static_cast<int>(DaemonError::ERROR_FATAL));
       return;
     }
-    auto errorCode = static_cast<uint8_t>(obj["errorCode"].toInt());
-    if (errorCode >= (uint8_t)DaemonError::DAEMON_ERROR_MAX) {
-      // Also report a generic error if the code is invalid.
-      logger.error() << "invalid backend failure error code";
-      // REPORTERROR(ErrorHandler::ControllerError, "controller");
+
+    // Validate the signed value before converting it. Casting a negative JSON
+    // value to uint8_t first would wrap it into an apparently valid code.
+    const int errorCode = errorValue.toInt(-1);
+    if (errorCode < 0 ||
+        errorCode >= static_cast<int>(DaemonError::DAEMON_ERROR_MAX)) {
+      logger.error() << "Invalid backend failure error code:" << errorCode;
+      emit backendFailure(static_cast<int>(DaemonError::ERROR_FATAL));
       return;
     }
+
     switch (static_cast<DaemonError>(errorCode)) {
       case DaemonError::ERROR_NONE:
-        [[fallthrough]];
+        return;
       case DaemonError::ERROR_FATAL:
-        logger.error() << "generic backend failure error (fatal or error none)";
-        // REPORTERROR(ErrorHandler::ControllerError, "controller");
+        logger.error() << "Generic VPN backend failure";
         break;
       case DaemonError::ERROR_SPLIT_TUNNEL_INIT_FAILURE:
-        [[fallthrough]];
+        logger.error() << "Windows split-tunnel driver initialization failed";
+        break;
       case DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE:
-        [[fallthrough]];
+        logger.error() << "Windows split-tunnel driver start/configuration failed";
+        break;
       case DaemonError::ERROR_SPLIT_TUNNEL_EXCLUDE_FAILURE:
-        logger.error() << "split tunnel backend failure error";
-        //REPORTERROR(ErrorHandler::SplitTunnelError, "controller");
+        logger.error() << "Windows split-tunnel application rules failed";
+        break;
+      case DaemonError::ERROR_SPLIT_TUNNEL_CAPABILITY_FAILURE:
+        logger.error() << "Loaded Windows split-tunnel driver lacks reverse-mode support";
         break;
       case DaemonError::DAEMON_ERROR_MAX:
-        // We should not get here.
         Q_ASSERT(false);
-        break;
+        emit backendFailure(static_cast<int>(DaemonError::ERROR_FATAL));
+        return;
     }
+
+    emit backendFailure(errorCode);
+    return;
   }
 
   if (type == "logs") {

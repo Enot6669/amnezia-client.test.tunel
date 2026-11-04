@@ -6,6 +6,7 @@
 
 #include "wireGuardProtocol.h"
 #include "core/utils/networkUtilities.h"
+#include "daemon/daemonerrors.h"
 
 #include "mozilla/localsocketcontroller.h"
 
@@ -39,6 +40,33 @@ WireguardProtocol::WireguardProtocol(const QJsonObject &configuration, QObject *
 
     connect(m_impl.get(), &ControllerImpl::disconnected, this,
             [this]() { setConnectionState(Vpn::ConnectionState::Disconnected); });
+    connect(m_impl.get(), &ControllerImpl::backendFailure, this,
+            [this](int daemonError) {
+                ErrorCode error = ErrorCode::UnknownError;
+                switch (static_cast<DaemonError>(daemonError)) {
+                  case DaemonError::ERROR_SPLIT_TUNNEL_INIT_FAILURE:
+                    error = ErrorCode::WindowsSplitTunnelInitError;
+                    break;
+                  case DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE:
+                    error = ErrorCode::WindowsSplitTunnelStartError;
+                    break;
+                  case DaemonError::ERROR_SPLIT_TUNNEL_EXCLUDE_FAILURE:
+                    error = ErrorCode::WindowsSplitTunnelRulesError;
+                    break;
+                  case DaemonError::ERROR_SPLIT_TUNNEL_CAPABILITY_FAILURE:
+                    error = ErrorCode::WindowsSplitTunnelUnsupportedError;
+                    break;
+                  case DaemonError::ERROR_NONE:
+                    return;
+                  case DaemonError::ERROR_FATAL:
+                  case DaemonError::DAEMON_ERROR_MAX:
+                    error = ErrorCode::UnknownError;
+                    break;
+                }
+
+                setLastError(error);
+                emit protocolError(error);
+            });
     m_impl->initialize(nullptr, nullptr);
 }
 

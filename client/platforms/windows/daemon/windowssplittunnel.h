@@ -40,13 +40,13 @@ class WindowsSplitTunnel final {
    */
   WindowsSplitTunnel(HANDLE driverIO);
   /**
-   * @brief Destroy the Windows Split Tunnel object and uninstalls the Driver.
+   * @brief Destroy the object and stop the demand-start driver service.
    */
   ~WindowsSplitTunnel();
 
   // void excludeApps(const QStringList& paths);
   // Excludes an Application from the VPN
-  bool excludeApps(const QStringList& appPaths);
+  bool excludeApps(const QStringList& appPaths, bool selectedAppsViaVpn = false);
 
   // Fetches and Pushed needed info to move to engaged mode
   bool start(int inetAdapterIndex, int vpnAdapterIndex = 0);
@@ -55,6 +55,9 @@ class WindowsSplitTunnel final {
 
   // Returns true if the split-tunnel driver is now up and running.
   bool isRunning();
+
+  // Probe the dedicated reverse-mode IOCTL without changing driver state.
+  bool supportsReverseMode() const;
 
   static bool detectConflict();
 
@@ -72,8 +75,6 @@ class WindowsSplitTunnel final {
  private:
   // Installes the Kernel Driver as Driver Service
   static SC_HANDLE installDriver();
-  static bool uninstallDriver();
-  static bool isInstalled();
   static bool initDriver(HANDLE driverIO);
   static DRIVER_STATE getState(HANDLE driverIO);
   static bool resetDriver(HANDLE driverIO);
@@ -83,7 +84,7 @@ class WindowsSplitTunnel final {
   QString stateString();
 
   // Generates a Configuration for Each APP
-  std::vector<uint8_t> generateAppConfiguration(const QStringList& appPaths);
+  std::vector<uint8_t> generateAppConfiguration(const QStringList& appPaths, bool allowEmpty = false);
   // Generates a Configuration which IP's are VPN and which network
   std::vector<std::byte> generateIPConfiguration(int inetAdapterIndex, int vpnAdapterIndex = 0);
   std::vector<uint8_t> generateProcessBlob();

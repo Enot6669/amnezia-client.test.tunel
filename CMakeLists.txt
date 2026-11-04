@@ -22,8 +22,20 @@ project(${PROJECT} VERSION ${AMNEZIAVPN_VERSION}
 
 option(AMNEZIA_BUILD_TESTS "Build test executables" OFF)
 
-# trigger conan to kick off `conan install` globally
+# Trigger Conan to install the dependency graph.
 find_package(OpenSSL REQUIRED)
+
+# The Windows daemon loads the driver directly from the application directory.
+# Explicitly load the Conan package config so WIN_SPLIT_TUNNEL_BIN is defined.
+if(WIN32)
+    find_package(win-split-tunnel CONFIG REQUIRED)
+    if(NOT WIN_SPLIT_TUNNEL_BIN OR
+       NOT EXISTS "${WIN_SPLIT_TUNNEL_BIN}/mullvad-split-tunnel.sys")
+        message(FATAL_ERROR
+            "The Amnezia reverse-mode Windows split-tunnel driver is missing from the Conan package.")
+    endif()
+endif()
+
 if (PREBUILTS_ONLY)
     return()
 endif()

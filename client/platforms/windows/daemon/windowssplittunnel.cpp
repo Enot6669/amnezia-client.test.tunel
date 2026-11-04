@@ -22,6 +22,7 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QDir>
 #include <QNetworkInterface>
 #include <QScopeGuard>
 #include <QUrl>
@@ -35,6 +36,11 @@ using CONFIGURATION_ENTRY = struct {
   SIZE_T ImageNameOffset;
   // Length of the String
   USHORT ImageNameLength;
+};
+
+using ST_SUBLAYER_GUIDS = struct {
+  GUID Baseline;
+  GUID Dns;
 };
 
 using CONFIGURATION_HEADER = struct {
@@ -88,7 +94,7 @@ using ProcessInfo = struct {
 #endif
 
 // Known ControlCodes
-#define IOCTL_INITIALIZE CTL_CODE(0x8000, 1, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_INITIALIZE CTL_CODE(0x8000, 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_DEQUEUE_EVENT \
   CTL_CODE(0x8000, 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -104,6 +110,12 @@ using ProcessInfo = struct {
 
 #define IOCTL_SET_CONFIGURATION \
   CTL_CODE(0x8000, 6, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_SET_CONFIGURATION_REVERSE \
+  CTL_CODE(0x8000, 12, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_GET_CAPABILITIES \
+  CTL_CODE(0x8000, 13, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_GET_CONFIGURATION \
   CTL_CODE(0x8000, 7, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -149,6 +161,21 @@ ProcessInfo getProcessInfo(HANDLE process, const PROCESSENTRY32W& processMeta) {
   return pi;
 }
 
+bool initializeDriverWithSublayers(HANDLE driverIO) {
+  // Mullvad win-split-tunnel 1.3.0.0 requires the two WFP sublayer GUIDs
+  // as a buffered input payload during initialization.
+  ST_SUBLAYER_GUIDS sublayers = {
+      {0xc78056ff, 0x2bc1, 0x4211,
+       {0xaa, 0xdd, 0x7f, 0x35, 0x8d, 0xef, 0x20, 0x2d}},
+      {0x60090787, 0xcca1, 0x4937,
+       {0xaa, 0xce, 0x51, 0x25, 0x6e, 0xf4, 0x81, 0xf3}},
+  };
+  DWORD bytesReturned = 0;
+  return DeviceIoControl(driverIO, IOCTL_INITIALIZE, &sublayers,
+                         sizeof(sublayers), nullptr, 0, &bytesReturned,
+                         nullptr);
+}
+
 QString normalizeExecutablePath(const QString& path) {
   QString normalized = path.trimmed();
   if (normalized.startsWith("file:", Qt::CaseInsensitive)) {
@@ -178,19 +205,15 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
     logger.error() << "Conflict detected, abort Split-Tunnel init.";
     return nullptr;
   }
-  // 01: Check if the driver is installed, if not do so.
-  if (!isInstalled()) {
-    logger.debug() << "Driver is not Installed, doing so";
-    auto handle = installDriver();
-    if (handle == INVALID_HANDLE_VALUE) {
-      WindowsUtils::windowsLog("Failed to install Driver");
-      return nullptr;
-    }
-    logger.debug() << "Driver installed";
-    CloseServiceHandle(handle);
-  } else {
-    logger.debug() << "Driver was installed";
+  // Always reconcile the service ImagePath with the driver shipped
+  // beside this application. Restarting alone would reload the old path.
+  auto serviceHandle = installDriver();
+  if (serviceHandle == INVALID_HANDLE_VALUE || serviceHandle == nullptr) {
+    WindowsUtils::windowsLog("Failed to install or update Split Tunnel service");
+    return nullptr;
   }
+  CloseServiceHandle(serviceHandle);
+  logger.debug() << "Split Tunnel service image path is up to date";
   // 02: Now check if the service is running
   auto driver_manager =
       WindowsServiceManager::open(QString::fromWCharArray(DRIVER_SERVICE_NAME));
@@ -203,13 +226,19 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
         << "WindowsServiceManager was unable fo find Split Tunnel service?";
     return nullptr;
   }
-  if (!driver_manager->isRunning()) {
-    logger.debug() << "Driver is not running, starting it";
-    // Start the service
-    if (!driver_manager->startService()) {
-      logger.error() << "Failed to start Split Tunnel Service";
+  // Reload an already-running service so Windows picks up the current
+  // driver image shipped with this application version.
+  if (driver_manager->isRunning()) {
+    logger.debug() << "Restarting Split Tunnel Service to load the current driver image";
+    if (!driver_manager->stopService()) {
+      logger.error() << "Failed to stop the existing Split Tunnel Service";
       return nullptr;
-    };
+    }
+  }
+
+  if (!driver_manager->startService()) {
+    logger.error() << "Failed to start Split Tunnel Service";
+    return nullptr;
   }
   // 03: Open the Driver Symlink
   auto driverFile = CreateFileW(DRIVER_SYMLINK, GENERIC_READ | GENERIC_WRITE, 0,
@@ -233,15 +262,22 @@ std::unique_ptr<WindowsSplitTunnel> WindowsSplitTunnel::create(
     driverFile = CreateFileW(DRIVER_SYMLINK, GENERIC_READ | GENERIC_WRITE, 0,
                              nullptr, OPEN_EXISTING, 0, nullptr);
     if (driverFile == INVALID_HANDLE_VALUE) {
-      logger.error() << "Opening Failed again, sorry!";
+      logger.error() << "Opening Failed again";
+      if (!driver_manager->stopService()) {
+        logger.error() << "Failed to stop driver after device open failure";
+      }
       return nullptr;
     }
   }
   if (!initDriver(driverFile)) {
     logger.error() << "Failed to init driver";
+    CloseHandle(driverFile);
+    if (!driver_manager->stopService()) {
+      logger.error() << "Failed to stop driver after initialization failure";
+    }
     return nullptr;
   }
-  // We're ready to talk to the driver, it's alive and setup.
+  // Ownership of the device handle transfers to WindowsSplitTunnel.
   return std::make_unique<WindowsSplitTunnel>(driverFile);
 }
 
@@ -265,9 +301,7 @@ bool WindowsSplitTunnel::initDriver(HANDLE driverIO) {
     }
   }
 
-  DWORD bytesReturned;
-  auto ok = DeviceIoControl(driverIO, IOCTL_INITIALIZE, nullptr, 0, nullptr, 0,
-                            &bytesReturned, nullptr);
+  auto ok = initializeDriverWithSublayers(driverIO);
   if (!ok) {
     auto err = GetLastError();
     logger.error() << "Driver init failed err -" << err;
@@ -286,11 +320,22 @@ WindowsSplitTunnel::WindowsSplitTunnel(HANDLE driverIO) : m_driver(driverIO) {
 }
 
 WindowsSplitTunnel::~WindowsSplitTunnel() {
-  CloseHandle(m_driver);
-  uninstallDriver();
+  if (m_driver != INVALID_HANDLE_VALUE) {
+    CloseHandle(m_driver);
+    m_driver = INVALID_HANDLE_VALUE;
+  }
+
+  // Keep the service registration so the next application start can update
+  // its ImagePath. Stop the demand-start driver instead of deleting a running
+  // kernel service (DeleteService would only mark it for deletion).
+  auto serviceManager =
+      WindowsServiceManager::open(QString::fromWCharArray(DRIVER_SERVICE_NAME));
+  if (serviceManager && !serviceManager->stopService()) {
+    logger.error() << "Failed to stop Split Tunnel driver during shutdown";
+  }
 }
 
-bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
+bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths, bool selectedAppsViaVpn) {
   auto state = getState();
   if (state != STATE_READY && state != STATE_RUNNING) {
     logger.warning() << "Driver is not in the right State to set Rules"
@@ -299,14 +344,17 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
   }
 
   logger.debug() << "Pushing new Ruleset for Split-Tunnel " << state;
-  auto config = generateAppConfiguration(appPaths);
+  auto config = generateAppConfiguration(appPaths, selectedAppsViaVpn);
   if (config.empty()) {
     logger.error() << "No valid split-tunnel application rules generated";
     return false;
   }
 
   DWORD bytesReturned;
-  auto ok = DeviceIoControl(m_driver, IOCTL_SET_CONFIGURATION, &config[0],
+  const DWORD configurationIoctl = selectedAppsViaVpn
+      ? IOCTL_SET_CONFIGURATION_REVERSE
+      : IOCTL_SET_CONFIGURATION;
+  auto ok = DeviceIoControl(m_driver, configurationIoctl, &config[0],
                             (DWORD)config.size(), nullptr, 0, &bytesReturned,
                             nullptr);
   if (!ok) {
@@ -319,6 +367,16 @@ bool WindowsSplitTunnel::excludeApps(const QStringList& appPaths) {
   return true;
 }
 
+bool WindowsSplitTunnel::supportsReverseMode() const {
+  DWORD capabilities = 0;
+  DWORD bytesReturned = 0;
+  const BOOL ok = DeviceIoControl(
+      m_driver, IOCTL_GET_CAPABILITIES, nullptr, 0, &capabilities,
+      sizeof(capabilities), &bytesReturned, nullptr);
+  return ok && bytesReturned == sizeof(capabilities) &&
+         (capabilities & 0x00000001) != 0;
+}
+
 bool WindowsSplitTunnel::start(int inetAdapterIndex, int vpnAdapterIndex) {
   // To Start we need to send 2 things:
   // Network info (what is vpn what is network)
@@ -327,9 +385,7 @@ bool WindowsSplitTunnel::start(int inetAdapterIndex, int vpnAdapterIndex) {
 
   if (getState() == STATE_STARTED) {
     logger.debug() << "Driver needs Init Call";
-    DWORD bytesReturned;
-    auto ok = DeviceIoControl(m_driver, IOCTL_INITIALIZE, nullptr, 0, nullptr,
-                              0, &bytesReturned, nullptr);
+    auto ok = initializeDriverWithSublayers(m_driver);
     if (!ok) {
       logger.error() << "Driver init failed. Error:" << GetLastError();
       return false;
@@ -426,7 +482,7 @@ WindowsSplitTunnel::DRIVER_STATE WindowsSplitTunnel::getState() {
 }
 
 std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
-    const QStringList& appPaths) {
+    const QStringList& appPaths, bool allowEmpty) {
   // Step 1: Calculate how much size the buffer will need
   size_t cummulated_string_size = 0;
   QStringList dosPaths;
@@ -434,16 +490,26 @@ std::vector<uint8_t> WindowsSplitTunnel::generateAppConfiguration(
     const QString normalizedPath = normalizeExecutablePath(path);
     auto dosPath = convertPath(normalizedPath);
     if (dosPath.isEmpty()) {
-      logger.error() << "Rejecting split-tunnel app path with empty device "
-                        "conversion:"
+      logger.error() << "Rejecting split-tunnel configuration because an "
+                        "application path could not be converted to a device path:"
                      << normalizedPath;
-      continue;
+      return {};
     }
     dosPaths.append(dosPath);
     cummulated_string_size += dosPath.toStdWString().size() * sizeof(wchar_t);
   }
   if (dosPaths.isEmpty()) {
-    return {};
+    // Only a genuinely empty user selection is valid in reverse mode.
+    // A non-empty list whose paths all failed conversion must not silently
+    // become an allow-list for zero applications.
+    if (!allowEmpty || !appPaths.isEmpty()) {
+      return {};
+    }
+    std::vector<uint8_t> emptyConfiguration(sizeof(CONFIGURATION_HEADER));
+    auto header = reinterpret_cast<CONFIGURATION_HEADER*>(emptyConfiguration.data());
+    header->NumEntries = 0;
+    header->TotalLength = emptyConfiguration.size();
+    return emptyConfiguration;
   }
   size_t bufferSize = sizeof(CONFIGURATION_HEADER) +
                       (sizeof(CONFIGURATION_ENTRY) * dosPaths.size()) +
@@ -541,27 +607,29 @@ std::vector<uint8_t> WindowsSplitTunnel::generateProcessBlob() {
   }
   auto cleanup = qScopeGuard([&] { CloseHandle(snapshot_handle); });
   // Load the First Entry, later iterate over all
-  PROCESSENTRY32W currentProcess;
+  PROCESSENTRY32W currentProcess{};
   currentProcess.dwSize = sizeof(PROCESSENTRY32W);
 
-  if (FALSE == (Process32First(snapshot_handle, &currentProcess))) {
-    WindowsUtils::windowsLog("Cant read first entry");
+  if (Process32FirstW(snapshot_handle, &currentProcess) == FALSE) {
+    WindowsUtils::windowsLog("Process32FirstW failed");
+    return {};
   }
 
   QMap<DWORD, ProcessInfo> processes;
 
   do {
-    auto process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                                      currentProcess.th32ProcessID);
+    HANDLE process_handle = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+        currentProcess.th32ProcessID);
 
-    if (process_handle == nullptr) {
-      continue;
+    // Some protected/system processes cannot be opened. Skip their image
+    // metadata, but always advance the snapshot iterator.
+    if (process_handle != nullptr) {
+      ProcessInfo info = getProcessInfo(process_handle, currentProcess);
+      processes.insert(info.ProcessId, info);
+      CloseHandle(process_handle);
     }
-    ProcessInfo info = getProcessInfo(process_handle, currentProcess);
-    processes.insert(info.ProcessId, info);
-    CloseHandle(process_handle);
-
-  } while (FALSE != (Process32NextW(snapshot_handle, &currentProcess)));
+  } while (Process32NextW(snapshot_handle, &currentProcess) != FALSE);
 
   auto process_list = processes.values();
   if (process_list.isEmpty()) {
@@ -620,59 +688,63 @@ std::vector<uint8_t> WindowsSplitTunnel::generateProcessBlob() {
 SC_HANDLE WindowsSplitTunnel::installDriver() {
   LPCWSTR displayName = L"Amnezia Split Tunnel Service";
   QFileInfo driver(qApp->applicationDirPath() + "/" + DRIVER_FILENAME);
-  if (!driver.exists()) {
+  if (!driver.exists() || !driver.isFile()) {
     logger.error() << "Split Tunnel Driver File not found "
                    << driver.absoluteFilePath();
     return (SC_HANDLE)INVALID_HANDLE_VALUE;
   }
-  auto path = driver.absolutePath() + "/" + DRIVER_FILENAME;
-  auto binPath = (const wchar_t*)path.utf16();
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(nullptr,  // local computer
-                                      nullptr,  // servicesActive database
-                                      scm_rights);
+
+  const QString nativePath = QDir::toNativeSeparators(driver.absoluteFilePath());
+  const std::wstring binPath = nativePath.toStdWString();
+  auto serviceManager = OpenSCManager(
+      nullptr, nullptr, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
+  if (serviceManager == nullptr) {
+    WindowsUtils::windowsLog("OpenSCManager failed while installing driver");
+    return (SC_HANDLE)INVALID_HANDLE_VALUE;
+  }
+
   auto service = CreateService(
-      serviceManager, DRIVER_SERVICE_NAME, displayName, SERVICE_ALL_ACCESS,
-      SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, binPath,
-      nullptr, nullptr, nullptr, nullptr, nullptr);
+      serviceManager, DRIVER_SERVICE_NAME, displayName,
+      SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
+      SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
+      nullptr, nullptr);
+
+  if (service == nullptr) {
+    const DWORD createError = GetLastError();
+    if (createError != ERROR_SERVICE_EXISTS) {
+      logger.error() << "CreateService failed:" << createError;
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+
+    service = OpenService(
+        serviceManager, DRIVER_SERVICE_NAME,
+        SERVICE_CHANGE_CONFIG | SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS |
+            SERVICE_START | SERVICE_STOP);
+    if (service == nullptr) {
+      WindowsUtils::windowsLog("OpenService failed while updating driver path");
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+
+    if (!ChangeServiceConfig(
+            service, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
+            SERVICE_ERROR_NORMAL, binPath.c_str(), nullptr, nullptr, nullptr,
+            nullptr, nullptr, displayName)) {
+      WindowsUtils::windowsLog("ChangeServiceConfig failed for Split Tunnel");
+      CloseServiceHandle(service);
+      CloseServiceHandle(serviceManager);
+      return (SC_HANDLE)INVALID_HANDLE_VALUE;
+    }
+    logger.info() << "Updated Split Tunnel service ImagePath to"
+                  << nativePath;
+  } else {
+    logger.info() << "Created Split Tunnel service for" << nativePath;
+  }
+
   CloseServiceHandle(serviceManager);
   return service;
 }
-// static
-bool WindowsSplitTunnel::uninstallDriver() {
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(NULL,  // local computer
-                                      NULL,  // servicesActive database
-                                      scm_rights);
-
-  auto servicehandle =
-      OpenService(serviceManager, DRIVER_SERVICE_NAME, GENERIC_READ);
-  auto result = DeleteService(servicehandle);
-  if (result) {
-    logger.debug() << "Split Tunnel Driver Removed";
-  }
-  return result;
-}
-// static
-bool WindowsSplitTunnel::isInstalled() {
-  // Check if the Drivers I/O File is present
-  auto symlink = QFileInfo(QString::fromWCharArray(DRIVER_SYMLINK));
-  if (symlink.exists()) {
-    return true;
-  }
-  // If not check with SCM, if the kernel service exists
-  auto scm_rights = SC_MANAGER_ALL_ACCESS;
-  auto serviceManager = OpenSCManager(NULL,  // local computer
-                                      NULL,  // servicesActive database
-                                      scm_rights);
-  auto servicehandle =
-      OpenService(serviceManager, DRIVER_SERVICE_NAME, GENERIC_READ);
-  auto err = GetLastError();
-  CloseServiceHandle(serviceManager);
-  CloseServiceHandle(servicehandle);
-  return err != ERROR_SERVICE_DOES_NOT_EXIST;
-}
-
 QString WindowsSplitTunnel::convertPath(const QString& path) {
   const QString normalizedPath = normalizeExecutablePath(path);
   if (normalizedPath.isEmpty()) {

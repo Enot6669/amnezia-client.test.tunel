@@ -264,6 +264,23 @@ install(TARGETS ${PROJECT}
     COMPONENT AmneziaVPN
 )
 
+if(WIN32)
+    # The Windows split-tunnel service opens this file beside AmneziaVPN.exe.
+    # Copy it to the build output for developer runs and install it into both
+    # Windows installer formats through the AmneziaVPN install component.
+    set(_WIN_SPLIT_TUNNEL_DRIVER
+        "${WIN_SPLIT_TUNNEL_BIN}/mullvad-split-tunnel.sys")
+    add_custom_command(TARGET ${PROJECT} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${_WIN_SPLIT_TUNNEL_DRIVER}"
+            "$<TARGET_FILE_DIR:${PROJECT}>/mullvad-split-tunnel.sys"
+        VERBATIM
+        COMMENT "Copying Amnezia reverse-mode split-tunnel driver beside the client")
+    install(FILES "${_WIN_SPLIT_TUNNEL_DRIVER}"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT AmneziaVPN)
+endif()
+
 if(APPLE)
     set(RUNTIME_DEPS_DIR ${CMAKE_INSTALL_BINDIR}/AmneziaVPN.app/Contents/Frameworks)
 else()

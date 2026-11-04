@@ -1,0 +1,55 @@
+name: Set up Windows Driver Kit
+description: Install and verify the Microsoft WDK required to build the reverse split-tunnel driver
+runs:
+  using: composite
+  steps:
+    - name: Install complete Windows Driver Kit
+      shell: pwsh
+      run: |
+        $installer = Join-Path $env:RUNNER_TEMP 'wdksetup.exe'
+        $url = 'https://download.microsoft.com/download/41fb59c2-1723-45f9-a270-96b73ad58233/KIT_BUNDLE_WDK_MEDIACREATION/wdksetup.exe'
+        if (Test-Path $installer) { Remove-Item $installer -Force }
+        & curl.exe --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --output $installer $url
+        if ($LASTEXITCODE -ne 0) {
+          throw "Official Microsoft WDK download failed with curl exit code $LASTEXITCODE."
+        }
+        if (!(Test-Path $installer)) { throw 'WDK installer was not created.' }
+        $downloadLength = (Get-Item $installer).Length
+        if ($downloadLength -lt 1MB) {
+          throw "Downloaded WDK bootstrapper is unexpectedly small ($downloadLength bytes)."
+        }
+        Write-Host "Downloaded Microsoft WDK bootstrapper ($downloadLength bytes); proceeding with signature verification and installation."
+        $signature = Get-AuthenticodeSignature $installer
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
+          throw "WDK installer signature validation failed: $($signature.Status)"
+        }
+        $process = Start-Process -FilePath $installer -ArgumentList '/quiet /norestart' -Wait -PassThru
+        if ($process.ExitCode -notin @(0, 3010, 2008)) {
+          throw "Windows Driver Kit installation failed with exit code $($process.ExitCode)"
+        }
+        $registryPath = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots'
+        $wdkRoot = (Get-ItemProperty $registryPath -ErrorAction SilentlyContinue).WdkBinRootVersioned
+        if (!$wdkRoot -or $wdkRoot -notmatch '10\.0\.26100') {
+          throw "Expected WDK 10.0.26100 was not registered. Detected root: $wdkRoot"
+        }
+        Write-Host "Verified WDK installation: $wdkRoot (installer exit $($process.ExitCode))"
+
+    - name: Prepare WDK x64 INF verifier
+      shell: pwsh
+      run: |
+        $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
+        $target = Join-Path $kits 'build\bin\x64'
+        $verifier = Get-ChildItem -Path $kits -Filter 'InfVerif.dll' -File -Recurse -ErrorAction SilentlyContinue |
+          Where-Object { $_.Directory.Name -ieq 'x64' } |
+          Select-Object -First 1
+        if (!$verifier) {
+          throw 'The x64 WDK InfVerif.dll was not found. Driver packaging cannot skip INF validation.'
+        }
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        if ([IO.Path]::GetFullPath($verifier.Directory.FullName).TrimEnd('\') -ine [IO.Path]::GetFullPath($target).TrimEnd('\')) {
+          Copy-Item (Join-Path $verifier.Directory.FullName '*') $target -Recurse -Force
+        }
+        if (!(Test-Path (Join-Path $target 'InfVerif.dll'))) {
+          throw 'InfVerif.dll was not installed into the x64 WDK build-tools directory.'
+        }
+        Write-Host "Prepared x64 INF verifier from $($verifier.Directory.FullName)"
