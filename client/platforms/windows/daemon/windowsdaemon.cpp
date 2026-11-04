@@ -51,16 +51,25 @@ WindowsDaemon::~WindowsDaemon() {
 }
 
 bool WindowsDaemon::validateConfig(const InterfaceConfig& config) {
-  // Reverse mode is accepted only when the loaded kernel driver explicitly
-  // advertises the capability. Legacy signed drivers fail closed here.
-  if (config.m_appsRouteMode == 1 &&
-      (m_splitTunnelManager == nullptr ||
-       !m_splitTunnelManager->supportsReverseMode())) {
-    logger.error() << "Selected-apps-through-VPN mode requires the custom "
-                      "reverse-mode split-tunnel driver";
-    emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_START_FAILURE);
+  if (config.m_appsRouteMode != 1) {
+    return true;
+  }
+
+  // Distinguish a driver that could not be loaded from a legacy/other driver
+  // that loaded successfully but does not implement reverse mode.
+  if (m_splitTunnelManager == nullptr) {
+    logger.error() << "Selected-apps-through-VPN mode requires an initialized "
+                      "Windows split-tunnel driver";
+    emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_INIT_FAILURE);
     return false;
   }
+
+  if (!m_splitTunnelManager->supportsReverseMode()) {
+    logger.error() << "Loaded split-tunnel driver does not advertise reverse-mode support";
+    emit backendFailure(DaemonError::ERROR_SPLIT_TUNNEL_CAPABILITY_FAILURE);
+    return false;
+  }
+
   return true;
 }
 

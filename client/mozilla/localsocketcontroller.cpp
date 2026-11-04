@@ -502,6 +502,9 @@ void LocalSocketController::parseCommand(const QByteArray& command) {
       case DaemonError::ERROR_SPLIT_TUNNEL_EXCLUDE_FAILURE:
         logger.error() << "Windows split-tunnel application rules failed";
         break;
+      case DaemonError::ERROR_SPLIT_TUNNEL_CAPABILITY_FAILURE:
+        logger.error() << "Loaded Windows split-tunnel driver lacks reverse-mode support";
+        break;
       case DaemonError::DAEMON_ERROR_MAX:
         Q_ASSERT(false);
         emit backendFailure(static_cast<int>(DaemonError::ERROR_FATAL));

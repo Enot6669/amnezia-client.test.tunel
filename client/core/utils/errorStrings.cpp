@@ -111,6 +111,9 @@ QString errorString(ErrorCode code) {
     case (ErrorCode::WindowsSplitTunnelRulesError):
         errorMessage = QObject::tr("Windows app split tunneling could not apply the selected application rules. Check the application executable paths.");
         break;
+    case (ErrorCode::WindowsSplitTunnelUnsupportedError):
+        errorMessage = QObject::tr("The installed Windows split tunneling driver does not support routing selected applications through the VPN. Install a matching Amnezia driver build.");
+        break;
 
     case (ErrorCode::ImportInvalidConfigError): errorMessage = QObject::tr("The config does not contain any containers and credentials for connecting to the server"); break;
     case (ErrorCode::ImportBackupFileUseRestoreInstead): errorMessage = QObject::tr("Backup files cannot be imported here. Use 'Restore from backup' instead."); break;

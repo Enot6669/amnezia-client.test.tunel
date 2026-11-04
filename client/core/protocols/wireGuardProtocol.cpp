@@ -53,6 +53,9 @@ WireguardProtocol::WireguardProtocol(const QJsonObject &configuration, QObject *
                   case DaemonError::ERROR_SPLIT_TUNNEL_EXCLUDE_FAILURE:
                     error = ErrorCode::WindowsSplitTunnelRulesError;
                     break;
+                  case DaemonError::ERROR_SPLIT_TUNNEL_CAPABILITY_FAILURE:
+                    error = ErrorCode::WindowsSplitTunnelUnsupportedError;
+                    break;
                   case DaemonError::ERROR_NONE:
                     return;
                   case DaemonError::ERROR_FATAL:
