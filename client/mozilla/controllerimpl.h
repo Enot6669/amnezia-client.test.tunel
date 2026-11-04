@@ -75,6 +75,8 @@ class ControllerImpl : public QObject {
   void connected(const QString& pubkey,
                  const QDateTime& connectionTimestamp = QDateTime());
   void disconnected();
+  // Forward daemon-side VPN errors so the UI does not silently return to Connect.
+  void backendFailure(int errorCode);
 
   // This method should be emitted after a checkStatus() call.
   // "serverIpv4Gateway" is the current VPN tunnel gateway.
